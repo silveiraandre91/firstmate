@@ -4259,7 +4259,22 @@ LAUNCH=${LAUNCH//__OMPEXT__/$sq_ompext}
 LAUNCH=${LAUNCH//__OMPWORKERCFG__/$sq_ompcfg}
 LAUNCH=${LAUNCH//__OPINPUT__/$sq_opinput}
 case "$HARNESS" in
-pi | pi-signed) LAUNCH=${LAUNCH//__PIBIN__/"$(shell_quote "$PI_BIN")"} ;;
+pi | pi-signed)
+  # When the task's project is a Firstmate repo itself (a crew for Firstmate's
+  # own shared tracked material, or a secondmate home), the worktree carries
+  # that repo's `.pi/extensions/` while the very same extension names are also
+  # discovered from the user scope. Pi then registers the same tool twice and
+  # refuses to start ("Tool fm_watch_arm_pi conflicts with ..."), so the worker
+  # dies before its first turn. `-na` ignores project-local files, which drops
+  # only that duplicate discovery: the user-scope extensions and the explicit
+  # -e set (the task's own extension plus any __PIWATCH__/__PITURNEND__) stay.
+  PI_USER_EXT_GUARD=
+  if [ -f "$PROJ_ABS/.pi/extensions/fm-primary-pi-watch.ts" ] &&
+    [ -f "$HOME/.pi/agent/extensions/fm-primary-pi-watch.ts" ]; then
+    PI_USER_EXT_GUARD=' -na'
+  fi
+  LAUNCH=${LAUNCH//__PIBIN__/"$(shell_quote "$PI_BIN")$PI_USER_EXT_GUARD"}
+  ;;
 cursor) LAUNCH=${LAUNCH//__CURSORBIN__/"$(shell_quote "$CURSOR_BIN")"} ;;
 gemini) LAUNCH=${LAUNCH//__GEMINISETTINGS__/"$(shell_quote "$STATE_REAL/$ID.gemini-settings.json")"} ;;
 omp) LAUNCH=${LAUNCH//__OMPBIN__/"$(shell_quote "$OMP_BIN")"} ;;
