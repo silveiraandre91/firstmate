@@ -1249,6 +1249,73 @@ fm_treehouse_pool_slot() {  # <project-dir> <worktree>
   [ "$project_common" = "$slot_common" ]
 }
 
+# The path spelling a pool's own state file records for one of its worktrees.
+#
+# `treehouse return --force <path>` does not resolve the path it is handed: it
+# matches that text against the string Treehouse itself wrote into
+# <pool>/treehouse-state.json and refuses every other spelling with "worktree
+# <path> is not managed by treehouse". The two spellings diverge whenever the
+# pool root is reached through a symlink, which is how this machine is laid
+# out: Treehouse records its configured root ($HOME/.treehouse here, symlinked
+# onto /workspace/treehouse), while bin/fm-spawn.sh records the worktree its
+# worker actually entered, resolved with pwd -P. Both name one directory, but
+# every return of the recorded worktree was refused and every finished task
+# stranded unclosed (observed 2026-09-17).
+#
+# This answers "what did the pool call this worktree?" by directory identity,
+# following symlinks on the recorded side, so a caller can hand Treehouse back
+# exactly the string it wrote - records written before and after this helper
+# alike. It can never widen what may be returned: a worktree the pool does not
+# list matches nothing and the caller keeps the path it already had, so
+# Treehouse's own refusal still stands, and a worktree of a different
+# repository is a different directory and never matches.
+#
+# Prints <worktree> unchanged when the pool records no entry for it, so this is
+# never a refusal of its own.
+#
+# The state file is read as text: only its "path" values are extracted, and a
+# value that cannot be resolved to the worktree being asked about is simply not
+# a match. Anything unexpected - an absent pool, an unreadable or malformed
+# state file, a relative or JSON-escaped path - degrades to the caller's own
+# path rather than to a wrong one.
+#
+# It prints no refusal of its own: a caller handed back the path it already had
+# leaves Treehouse's own refusal to stand.
+fm_treehouse_recorded_slot_path() {  # <worktree>
+  local worktree=$1 slot pool state line rest value candidate
+  slot=$(CDPATH='' cd -- "$worktree" 2>/dev/null && pwd -P) || slot=
+  if [ -n "$slot" ]; then
+    pool=$(dirname "$(dirname "$slot")")
+    state="$pool/treehouse-state.json"
+    if [ -f "$state" ] && [ ! -L "$state" ]; then
+      while IFS= read -r line || [ -n "$line" ]; do
+        rest=$line
+        while [ -n "$rest" ]; do
+          case "$rest" in *'"path"'*) ;; *) break ;; esac
+          rest=${rest#*\"path\"}
+          rest=${rest#*:}
+          rest=${rest#"${rest%%[![:space:]]*}"}
+          case "$rest" in '"'*) ;; *) break ;; esac
+          rest=${rest#\"}
+          value=${rest%%\"*}
+          rest=${rest#*\"}
+          if [ -n "$value" ]; then
+            case "$value" in
+              /*) candidate=$value ;;
+              *) candidate=$pool/$value ;;
+            esac
+            if [ "$(CDPATH='' cd -- "$candidate" 2>/dev/null && pwd -P)" = "$slot" ]; then
+              printf '%s\n' "$candidate"
+              return 0
+            fi
+          fi
+        done
+      done < "$state"
+    fi
+  fi
+  printf '%s\n' "$worktree"
+}
+
 # Slot-owner claim: which task a Treehouse pool slot currently belongs to.
 #
 # Treehouse can record ownership durably: `treehouse get --lease --lease-holder`

@@ -161,6 +161,22 @@
 # leased home releases its durable treehouse lease so the pool slot is freed,
 # never left leased forever. If the treehouse return fails, teardown leaves the
 # leased home and state in place instead of hiding a still-held lease.
+# Recorded-spelling return (teardown-treehouse-path): `treehouse return --force`
+# does not resolve the path it is handed - it matches that text against the
+# string Treehouse wrote into <pool>/treehouse-state.json and refuses every
+# other spelling with "worktree <path> is not managed by treehouse". The two
+# diverge whenever the pool root is reached through a symlink: Treehouse records
+# its configured root ($HOME/.treehouse here, symlinked onto /workspace/treehouse)
+# while the task record holds the path the worker actually entered, resolved with
+# pwd -P. Both name one directory, and every finished task still stranded
+# unclosed because the return was refused (observed 2026-09-17).
+# teardown_treehouse_return therefore hands Treehouse back the spelling its own
+# pool state records for that directory, resolved by identity
+# (bin/fm-wake-lib.sh's fm_treehouse_recorded_slot_path), and keeps the given
+# path whenever the pool lists none. It cannot widen what may be returned: an
+# unlisted worktree matches nothing, so Treehouse's own refusal stands, and every
+# other guard above is untouched.
+#
 # Usage: fm-teardown.sh <task-id> [--force] [--legacy-record]
 #   --force skips ordinary-task dirty and landed-work checks, skips scout report
 #   checks, and discards secondmate child work for kind=secondmate. Only use it
@@ -1637,11 +1653,17 @@ cleanup_stale_lock_for_safety_check() {
 # stale git index.lock left by a killed crew process. See the script header.
 teardown_treehouse_return() {
   local dir=$1 cd_dir=$2 label=$3 post_cleanup_check=${4:-}
-  local out lock attempt=0 max_retries lock_desc
+  local out lock attempt=0 max_retries lock_desc return_dir
+
+  # Treehouse matches the path it is handed against its own recorded spelling,
+  # which differs from the recorded worktree only by the pool root's symlink
+  # (script header, teardown-treehouse-path). Keep the given path when the pool
+  # lists none, so Treehouse still refuses a worktree that is not its own.
+  return_dir=$(fm_treehouse_recorded_slot_path "$dir") || return_dir=$dir
 
   # Capture stdout+stderr so non-lock failures stay visible and lock failures can
   # be matched by signature even when the lock file is already gone mid-check.
-  if out=$( ( cd "$cd_dir" && treehouse return --force "$dir" ) 2>&1 ); then
+  if out=$( ( cd "$cd_dir" && treehouse return --force "$return_dir" ) 2>&1 ); then
     [ -n "$out" ] && printf '%s\n' "$out"
     return 0
   fi
@@ -1666,7 +1688,7 @@ teardown_treehouse_return() {
     echo "teardown: $label return failed with transient git lock ($lock_desc); waiting ${TREEHOUSE_RETURN_LOCK_RETRY_WAIT_SECS}s and retrying ($attempt/${max_retries})" >&2
     sleep "$TREEHOUSE_RETURN_LOCK_RETRY_WAIT_SECS"
 
-    if out=$( ( cd "$cd_dir" && treehouse return --force "$dir" ) 2>&1 ); then
+    if out=$( ( cd "$cd_dir" && treehouse return --force "$return_dir" ) 2>&1 ); then
       [ -n "$out" ] && printf '%s\n' "$out"
       echo "teardown: $label return succeeded on retry; lock cleared on its own" >&2
       return 0
@@ -1693,7 +1715,7 @@ teardown_treehouse_return() {
           return 1
         fi
       fi
-      if out=$( ( cd "$cd_dir" && treehouse return --force "$dir" ) 2>&1 ); then
+      if out=$( ( cd "$cd_dir" && treehouse return --force "$return_dir" ) 2>&1 ); then
         [ -n "$out" ] && printf '%s\n' "$out"
         echo "teardown: $label return succeeded after stale-lock cleanup" >&2
         return 0
