@@ -3430,7 +3430,7 @@ test_newest_filed_gates_report_their_full_text() {
   local home fakebin json long
   home=$(make_home full-gate-text)
   : > "$home/data/secondmates.md"
-  long=$(printf 'y%.0s' $(seq 1 600))
+  long=$(printf "y%.0s" $(seq 1 2500))
   printf '## In flight\n\n## Queued\n' > "$home/data/backlog.md"
   printf -- '- [ ] long-gate - %s (repo: sample) (kind: ship) (since 2026-07-01)\n\n## Done\n' \
     "$long" >> "$home/data/backlog.md"

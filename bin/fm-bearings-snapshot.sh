@@ -87,10 +87,11 @@
 # wins over a receipt for the same id. The section never mutates state and never
 # revives anything.
 #
-# Gate title and reason text are bounded by FM_BEARINGS_GATE_TEXT (default 1000)
-# rather than the old 60/40 clip, because a captain surface renders the whole
-# decision text and a clipped reason is a clipped decision. The bound stays
-# configurable so a deliberately smaller projection is still possible.
+# Gate title and reason carry their FULL text. They used to be clipped to 60
+# and 40 characters, and then to a configurable bound; both were still a clipped
+# decision on a captain surface that renders the whole thing. Only whitespace is
+# normalized, so the board and the digest receive the real text and any display
+# bound belongs to the renderer that knows its own width.
 #
 # Flags:
 #   (default)        compact projection with bounded remote-ledger collection, TOON
@@ -132,7 +133,6 @@ FM_BEARINGS_REPORTS=${FM_BEARINGS_REPORTS:-20}
 FM_BEARINGS_RECORDED_PRS=${FM_BEARINGS_RECORDED_PRS:-20}
 FM_BEARINGS_UNHEALTHY=${FM_BEARINGS_UNHEALTHY:-20}
 FM_BEARINGS_STALLED=${FM_BEARINGS_STALLED:-10}
-FM_BEARINGS_GATE_TEXT=${FM_BEARINGS_GATE_TEXT:-1000}
 FM_BEARINGS_PR_REPOS=${FM_BEARINGS_PR_REPOS:-10}
 FM_BEARINGS_PR_LIMIT=${FM_BEARINGS_PR_LIMIT:-20}
 FM_BEARINGS_PR_TIMEOUT=${FM_BEARINGS_PR_TIMEOUT:-20}
@@ -150,7 +150,6 @@ validate_bound FM_BEARINGS_REPORTS "$FM_BEARINGS_REPORTS"
 validate_bound FM_BEARINGS_RECORDED_PRS "$FM_BEARINGS_RECORDED_PRS"
 validate_bound FM_BEARINGS_UNHEALTHY "$FM_BEARINGS_UNHEALTHY"
 validate_bound FM_BEARINGS_STALLED "$FM_BEARINGS_STALLED"
-validate_bound FM_BEARINGS_GATE_TEXT "$FM_BEARINGS_GATE_TEXT"
 validate_bound FM_BEARINGS_PR_REPOS "$FM_BEARINGS_PR_REPOS"
 validate_bound FM_BEARINGS_PR_LIMIT "$FM_BEARINGS_PR_LIMIT"
 
@@ -425,10 +424,11 @@ MODEL=$(printf '%s' "$SNAP" | jq \
   --argjson return_catchup "$RETURN_CATCHUP" \
   --argjson stalled_receipts "$STALLED_RECEIPTS" \
   --argjson stalled_n "$FM_BEARINGS_STALLED" \
-  --argjson gate_text_n "$FM_BEARINGS_GATE_TEXT" \
   --argjson candidate_prs "$CANDIDATE_PRS" "$FM_LANDED_JQ_DEFS"'
   def trunc($n): if . == null then null else
     (tostring | gsub("\\s+"; " ") | if (length > $n) then (.[:$n] + "…") else . end) end;
+  # Whitespace-normalized full text: no clip, so a gate reaches a renderer whole.
+  def full_text: if . == null then null else (tostring | gsub("\\s+"; " ")) end;
   def fit($n):
     tostring | gsub("\\s+"; " ")
     | if $n <= 0 then ""
@@ -487,9 +487,9 @@ MODEL=$(printf '%s' "$SNAP" | jq \
         end
       end;
   def as_gate($owner):
-    {id, title:(.title | trunc($gate_text_n)),
+    {id, title:(.title | full_text),
      blocked_by:((.unresolved_blocker_ids // []) | if length > 0 then join(",") else "-" end | trunc(120)),
-     reason:(hold_gate_reason | trunc($gate_text_n)), owner:$owner,
+     reason:(hold_gate_reason | full_text), owner:$owner,
      filed:((.since // null) | trunc(40))};
   def round_robin_landed($n):
     . as $groups
