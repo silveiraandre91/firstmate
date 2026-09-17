@@ -131,6 +131,7 @@ The board carries five optional captain surfaces beside the four fleet sections:
 - `tickets` is the kanban view: one card per captain matter, so his list is the board itself.
   EVERY captain message becomes a card, however trivial, and nothing he said is dropped.
   Each card carries the ticket id, `opened_at`, the owner (who is doing it), a one-line `summary`, a dated `history` of what was done, `learnings` from the process (an error's cause, a cost, a trick), and any `questions` for that matter.
+  A delivered card also carries its `delivered_at`, `result`, and `report_url`/`pr_url`, so the delivery detail stays reachable when the kanban owns the delivered cards.
   `state` is one of `captain`, `doing`, `blocked`, `delivered`, or `closed`.
   A card moves to `closed` only after the captain clicks resolved; delivering moves it to `delivered`, never out of the list.
   When `tickets` is present the board renders the kanban and folds the delivered and question cards into it, so compose the kanban in preference to the standalone sections.

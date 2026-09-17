@@ -670,6 +670,14 @@ __FM_BEARINGS_BOARD_DATA__
   if (callStack) { callStack.className = "bb-call"; callStack.hidden = false; }
   var dispatchBar = document.getElementById("bb-dispatch");
   if (dispatchBar) dispatchBar.hidden = true;
+  /* Every optional section starts hidden each render: an earlier payload's
+     section must not survive an empty one, or a live re-render leaves a header
+     with no rows behind. */
+  ["bb-grill-section", "bb-delivered-section", "bb-advice-section",
+   "bb-stalled-section", "bb-kanban-section"].forEach(function (id) {
+    var section = document.getElementById(id);
+    if (section) section.hidden = true;
+  });
 
   document.getElementById("bb-provenance").textContent = data.schema + " · " + data.generated;
 
@@ -836,6 +844,7 @@ __FM_BEARINGS_BOARD_DATA__
   if (cards.length) {
     stackPrev.addEventListener("click", function () { showCard(active - 1); });
     stackNext.addEventListener("click", function () { showCard(active + 1); });
+    stackNav.hidden = false;
     showCard(0);
   } else {
     deck.classList.add("bb-call--empty");
@@ -1265,6 +1274,9 @@ __FM_BEARINGS_BOARD_DATA__
       var qd = el("span", "bb-queued");
       qd.innerHTML = CHECK_SVG + " queued";
       foot.appendChild(qd);
+      var qlimit = el("span", "bb-limit");
+      qlimit.setAttribute("role", "alert");
+      foot.appendChild(qlimit);
       form.appendChild(foot);
       form.addEventListener("submit", function (ev) {
         ev.preventDefault();
@@ -1272,6 +1284,13 @@ __FM_BEARINGS_BOARD_DATA__
         var value = fd.get("answer");
         var note = (fd.get("note") || "").trim();
         if (!value && !note) return;
+        /* The answer channel drops a note past 512 bytes, so refuse it here and
+           say so instead of queueing something that would be lost. */
+        if (utf8ByteLength(note) > 512) {
+          qlimit.textContent = "Answer is too long to queue (512 bytes maximum).";
+          qlimit.classList.add("is-visible");
+          return;
+        }
         if (window.lavish && window.lavish.queuePrompt) {
           window.lavish.queuePrompt(
             "Question (" + t.id + "): " + q.prompt,
@@ -1296,9 +1315,21 @@ __FM_BEARINGS_BOARD_DATA__
     if (t.owner) meta.push("who: " + t.owner);
     if (t.opened_at) meta.push("opened " + t.opened_at);
     if (t.updated_at) meta.push("updated " + t.updated_at);
+    if (t.delivered_at) meta.push("delivered " + t.delivered_at);
     if (t.repo) meta.push(t.repo);
     if (meta.length) card.appendChild(el("div", "bb-card__meta", meta.join(" · ")));
     if (t.summary) card.appendChild(el("div", "bb-card__summary", t.summary));
+    if (t.result) card.appendChild(el("div", "bb-card__summary", t.result));
+    if (t.report_url) {
+      var rl = el("a", "bb-delivered__link", "report: " + t.report_url);
+      rl.href = t.report_url; rl.target = "_blank"; rl.rel = "noopener";
+      card.appendChild(rl);
+    }
+    if (t.pr_url) {
+      var pl = el("a", "bb-delivered__link", "PR: " + t.pr_url);
+      pl.href = t.pr_url; pl.target = "_blank"; pl.rel = "noopener";
+      card.appendChild(pl);
+    }
     if (compact) {
       /* A resolved card keeps its history so the outcome is never lost. */
       if ((t.history || []).length) {
@@ -1364,10 +1395,13 @@ __FM_BEARINGS_BOARD_DATA__
     });
   }
 
-  /* A real in-progress or finished row supersedes the placeholder. The waiting
-     card itself does not: the whole point is that the captain sees the item move
-     from "waiting for you" to "running" the moment they click. */
-  [data.underway, data.landed].forEach(function (list) {
+  /* A real in-progress or finished row supersedes the placeholder: work the
+     kanban already shows as running or resolved, plus anything Underway or
+     Landed carries. A still-waiting or blocked card does NOT supersede it, so
+     the captain keeps seeing the action they just ordered. */
+  var realRowLists = [data.underway, data.landed,
+    (data.tickets || []).filter(function (t) { return t && (t.state === "doing" || t.state === "closed"); })];
+  realRowLists.forEach(function (list) {
     (list || []).forEach(function (x) {
       var t = x && (x.ticket || x.key || x.id);
       if (t) renderedTickets[String(t)] = true;

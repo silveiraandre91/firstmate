@@ -434,6 +434,67 @@ test_a_notice_survives_a_reload_because_it_is_stored_per_board_path() {
   pass "a change that happened while the board was closed survives a reload, and does not sound without the toggle"
 }
 
+test_a_kanban_delivered_card_reaches_its_report_and_delivery_time() {
+  local home out payload
+  home=$(make_home kanban-delivered-detail)
+  payload=$(surface_payload '{"tickets":[
+    {"id":"t-1","title":"Fix the parser","state":"delivered","repo":"proj","owner":"agent ship",
+     "summary":"handed over","delivered_at":"2026-09-17T13:00:00Z","result":"all tests green",
+     "report_url":"https://example.test/report","pr_url":"https://example.test/pr/1"}
+  ]}')
+  out=$(render_payload "$home" "$payload")
+  printf '%s' "$out" | jq -e '
+    (.kanban[3].cards | length) == 1
+      and (.kanban[3].cards[0]
+        | .kasten == true
+          and (.meta | test("delivered 2026-09-17T13:00:00Z"))
+          and (.text | test("all tests green"))
+          and (.text | test("https://example.test/report"))
+          and (.text | test("https://example.test/pr/1")))
+  ' >/dev/null || fail "a kanban delivered card did not reach its report and delivery time: $out"
+  pass "a kanban delivered card carries the result, delivery time, and report link"
+}
+
+test_a_live_rebuild_that_empties_a_section_hides_it() {
+  local home other board1 board2 out payload1 payload2
+  home=$(make_home live-empty-section)
+  other=$(make_home live-empty-section-next)
+  payload1=$(surface_payload '{"delivered":[{"ticket":"d1","repo":"sample","what":"First"}]}')
+  payload2=$(surface_payload '{"delivered":[]}')
+  board1=$(build_payload "$home" "$payload1")
+  board2=$(build_payload "$other" "$payload2")
+  out=$(FM_HARNESS_LIVE=1 FM_HARNESS_NEXT_HTML="$board2" FM_HARNESS_LIVE_REFRESH=1 node "$HARNESS" "$board1") \
+    || fail "the live harness failed"
+  printf '%s' "$out" | jq -e '
+    (.delivered | length) == 0 and .sections.delivered == true
+  ' >/dev/null || fail "a live rebuild left an emptied section visible: $out"
+  pass "a live rebuild hides a section the new payload leaves empty"
+}
+
+test_a_resolved_ticket_drops_its_accepted_placeholder() {
+  local home other board1 board2 out1 out2 payload1 payload2
+  home=$(make_home live-resolved-placeholder)
+  other=$(make_home live-resolved-placeholder-next)
+  payload1=$(surface_payload '{"tickets":[{"id":"t-1","title":"Handed over","state":"delivered","repo":"proj"}]}')
+  payload2=$(surface_payload '{"tickets":[{"id":"t-1","title":"Handed over","state":"closed","repo":"proj"}]}')
+  board1=$(build_payload "$home" "$payload1")
+  board2=$(build_payload "$other" "$payload2")
+  # Before the rebuild the order shows as accepted and dispatching.
+  out1=$(FM_HARNESS_ACTION=card-approve node "$HARNESS" "$board1") \
+    || fail "the approval harness failed"
+  printf '%s' "$out1" | jq -e '
+    ([.underway[] | select(.badges[0].text == "accepted")] | length) == 1
+  ' >/dev/null || fail "an accepted action was not shown in Underway: $out1"
+  # Once the matter is resolved, the placeholder must go rather than linger.
+  out2=$(FM_HARNESS_LIVE=1 FM_HARNESS_NEXT_HTML="$board2" FM_HARNESS_ACTION=card-approve FM_HARNESS_LIVE_REFRESH=1 \
+    node "$HARNESS" "$board1") || fail "the resolve harness failed"
+  printf '%s' "$out2" | jq -e '
+    ([.underway[] | select(.badges[0].text == "accepted")] | length) == 0
+      and ([.kanban[4].cards[] | .ticket] | index("#t-1") != null)
+  ' >/dev/null || fail "a resolved ticket kept its accepted placeholder: $out2"
+  pass "a resolved ticket drops its accepted placeholder while staying in history"
+}
+
 test_an_underway_row_leads_with_the_task_name_and_keeps_its_run_status() {
   local home out
   home=$(make_home underway-name)
@@ -517,3 +578,6 @@ test_each_execution_control_orders_its_own_key_not_a_decision
 test_a_kanban_card_orders_its_question_and_its_approval
 test_the_board_notices_a_rebuild_without_a_reload_and_sounds_when_asked
 test_a_notice_survives_a_reload_because_it_is_stored_per_board_path
+test_a_kanban_delivered_card_reaches_its_report_and_delivery_time
+test_a_live_rebuild_that_empties_a_section_hides_it
+test_a_resolved_ticket_drops_its_accepted_placeholder

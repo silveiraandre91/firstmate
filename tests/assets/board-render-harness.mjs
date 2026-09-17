@@ -185,10 +185,6 @@ await flush();
 if (liveMode && process.env.FM_HARNESS_LIVE_SOUND === "1") {
   globalThis.window.fmBearingsBoard.setSound(true);
 }
-if (liveMode && process.env.FM_HARNESS_LIVE_REFRESH === "1") {
-  await globalThis.window.fmBearingsBoard.refreshNow();
-  await flush();
-}
 
 // Action mode performs one real captain click through the shipped handler, so
 // behavior is asserted through the page's own code rather than a reimplementation.
@@ -235,6 +231,13 @@ if (action) {
   actionReport.found = ok;
   if (!ok && !actionReport.error) actionReport.error = "no handler found for " + action;
   actionReport.queued = JSON.parse(JSON.stringify(globalThis.window.lavish.queued));
+  await flush();
+}
+
+// The refresh runs after any action, so a test can order a click and then the
+// rebuild that answers it.
+if (liveMode && process.env.FM_HARNESS_LIVE_REFRESH === "1") {
+  await globalThis.window.fmBearingsBoard.refreshNow();
   await flush();
 }
 
@@ -308,6 +311,7 @@ const kanban = (byId.get("bb-kanban") || new Node("div")).children.map((col) => 
       summary: find(card, "bb-card__summary")?.textContent ?? "",
       kasten: !!find(card, "bb-approve"),
       questions: card.children.filter((c) => c.tagName === "form").length,
+      text: card.textContent,
       history: (findAll(card, "bb-card__list").filter((l) => !l.className.includes("bb-card__learnings"))[0]?.children || [])
         .map((li) => li.textContent),
       learnings: (findAll(card, "bb-card__learnings")[0]?.children || []).map((li) => li.textContent),
@@ -324,6 +328,10 @@ const errorText = [...byId.entries()]
 const empty = ch.children.filter((c) => c.className.includes("bb-empty")).map((c) => c.textContent);
 const more = ch.children.filter((c) => c.className.includes("bb-morechip")).map((c) => c.textContent);
 
+const sectionHidden = (id) => {
+  const node = byId.get(id);
+  return node ? !!node.hidden : true;
+};
 const liveNode = byId.get("bb-live");
 const live = {
   available: !!(globalThis.window.fmBearingsBoard && globalThis.window.fmBearingsBoard.liveState.available),
@@ -337,4 +345,7 @@ const live = {
 };
 
 process.stdout.write(
-  JSON.stringify({ stats, underway, charted, delivered, stalled, grill, advice, kanban, empty, more, error: errorText, live, action: actionReport }) + "\n");
+  JSON.stringify({ stats, underway, charted, delivered, stalled, grill, advice, kanban, empty, more, error: errorText, live, action: actionReport,
+    sections: { grill: sectionHidden("bb-grill-section"), delivered: sectionHidden("bb-delivered-section"),
+      advice: sectionHidden("bb-advice-section"), stalled: sectionHidden("bb-stalled-section"),
+      kanban: sectionHidden("bb-kanban-section") } }) + "\n");
