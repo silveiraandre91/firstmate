@@ -3369,12 +3369,13 @@ test_stalled_projection_names_stopped_work_without_inventing_detection() {
 ## In flight
 - [ ] dead-worker - Dead worker task (repo: firstmate) (kind: ship) (since 2026-07-11)
 - [ ] failed-worker - Failed worker task (repo: firstmate) (kind: ship) (since 2026-07-11)
+- [ ] done-worker - Finished worker task (repo: firstmate) (kind: ship) (since 2026-07-11)
 
 ## Queued
 
 ## Done
 EOF
-  mkdir -p "$home/projects/dead-wt" "$home/projects/failed-wt"
+  mkdir -p "$home/projects/dead-wt" "$home/projects/failed-wt" "$home/projects/done-wt"
   # A worker whose backend window is gone: the fake tmux reports any `dead-`
   # target missing, which is the canonical snapshot's endpoint signal.
   fm_write_meta "$home/state/dead-worker.meta" \
@@ -3391,6 +3392,14 @@ EOF
     "harness=claude" "kind=ship" "mode=no-mistakes"
   record_claude_state "$home/state" failed-worker idle
   printf 'failed: the build broke\n' > "$home/state/failed-worker.status"
+  # A worker that finished normally keeps its meta until teardown while its
+  # backend window is already gone: that is completed work, not stopped work.
+  fm_write_meta "$home/state/done-worker.meta" \
+    "window=firstmate:fm-dead-done" \
+    "worktree=$home/projects/done-wt" "project=firstmate" \
+    "harness=claude" "kind=ship" "mode=no-mistakes"
+  record_claude_state "$home/state" done-worker idle
+  printf 'done: the delivery landed\n' > "$home/state/done-worker.status"
   # An unresolved FAILED terminal outcome for a task already torn down, plus a
   # resolved one that must never be shown as stopped work.
   mkdir -p "$home/state/terminal-outcomes"
@@ -3422,6 +3431,7 @@ EOF
         | .kind == "failed" and .last_state == "failed")
       and (.stalled | map(select(.id == "gone-worker"))[0]
         | .kind == "failed" and .resumable == false and .started == "2026-09-17T12:58:20Z")
+      and ((.stalled | map(.id) | index("done-worker")) == null)
   ' >/dev/null || fail "the stalled projection did not name stopped work faithfully: $json"
   pass "stalled consumes dead endpoints, failed states, and unresolved failed outcomes without inventing detection"
 }

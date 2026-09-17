@@ -81,11 +81,13 @@
 # unresolved FAILED terminal outcome receipt under state/terminal-outcomes/ whose
 # format and lifecycle bin/fm-inactive-reconcile.sh owns (a receipt for a completed
 # outcome, or one already presented/reported, is reconciled and never appears).
-# Each row carries the durable task id, a kind of dead/failed, the spawn-derived
-# start time when known, the last known state, why it stopped, a plain-word next
-# step, and whether it can be resumed on its existing record. A live-signal row
-# wins over a receipt for the same id. The section never mutates state and never
-# revives anything.
+# Each row carries the durable task id, a kind of dead/failed. A worker that
+# finished normally is NOT stopped work: a task that reported `done` keeps its
+# meta until teardown while its endpoint window is already gone, so the
+# endpoint-gone branch excludes a row whose state is done or whose last durable
+# status event is `done:`. The receipt branch only ever carries a failed
+# outcome. A live-signal row wins over a receipt for the same id. The section
+# never mutates state and never revives anything.
 #
 # Gate title and reason carry their FULL text. They used to be clipped to 60
 # and 40 characters, and then to a configurable bound; both were still a clipped
@@ -529,7 +531,12 @@ MODEL=$(printf '%s' "$SNAP" | jq \
   # here is a continuation pointer, never a live-work claim.
   | [ .tasks[]
       | select(.kind != "secondmate")
-      | select(.endpoint.exists == false or .endpoint.agent_alive == "dead" or .current_state.state == "failed")
+      | (.hints.last_event_text // "") as $last_event
+      | select(
+          (((.endpoint.exists == false or .endpoint.agent_alive == "dead")
+            and .current_state.state != "done"
+            and (($last_event | test("^[[:space:]]*done[[:space:]]*:")) | not))
+           or .current_state.state == "failed"))
       | (.endpoint.exists == false or .endpoint.agent_alive == "dead") as $endpoint_gone
       | { id,
           kind:(if $endpoint_gone then "dead" else "failed" end),
