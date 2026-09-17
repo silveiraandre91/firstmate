@@ -63,6 +63,34 @@
 # keyed-answer intake as a blind close, are owned by
 # docs/captain-hold-lifecycle.md.
 #
+# CAPTAIN SURFACES BEYOND THE FOUR FLEET SECTIONS. Five optional sections carry
+# the captain's own working surfaces: `advice` (the firstmate's critical read,
+# with pros, cons, and a recommendation), `stalled` (work whose worker stopped,
+# with why it stopped and how it continues), `delivered` (work handed over but
+# NOT approved, which never renders as concluded), `grill` (numbered questions
+# with options), and `tickets` (a kanban card per captain matter, carrying entry
+# time, owner, history, learnings, and its own questions). All five are optional
+# and are validated when present, so a payload composed before they existed
+# still builds.
+#
+# EXECUTION ANNOTATIONS. Beyond the decision cards, the shipped template can
+# queue a choice annotation that ORDERS work rather than recording a decision.
+# Every such key is a fixed, parseable shape so a handler maps it back without
+# guessing: `dispatch.charted` (the batch picker) and `dispatch.<task-id>` (one
+# row's Dispatch now button), `resume.<task-id>` (a stopped worker),
+# `approve.<ticket-id>` (the delivered card's approval checkbox), and
+# `grill.<question-number>.<ticket-id>` (one question). The template also records
+# every accepted action locally and renders it in Underway as `accepted -
+# dispatching` with the time, so a choice the captain just made is never
+# invisible before the real row arrives. What each key MEANS and how it is
+# routed is owned by the bearings skill; this script owns only the contract that
+# these keys exist and that the template produces them.
+#
+# NO CLIPPED DECISION TEXT. The template wraps titles, reasons, questions, and
+# ticket text with no ellipsis, no line clamp, and no hidden overflow, and the
+# payload validator imposes no length bound on them, because that text is what
+# the captain decides from. Only a URL renders on a single line.
+#
 # Validation is fail-closed: the payload must be valid JSON with
 # schema=fm-bearings-board.v1 and every renderer-consumed field must satisfy
 # the fm-bearings-board.v1 types and item invariants below. Every fleet row and
@@ -112,7 +140,11 @@ fail() {
 board_path() { printf '%s/.lavish/bearings-board.html\n' "$FM_HOME"; }
 
 validate_payload() {  # <data.json>
-  jq -e --arg schema "$BOARD_SCHEMA" '
+  local failures
+  # Fail closed, and say WHICH part failed. The program returns an array of
+  # short human-readable failures - empty exactly when the payload is valid - so
+  # a composer learns what to fix instead of only that the board was refused.
+  failures=$(jq -c --arg schema "$BOARD_SCHEMA" '
     def nonempty_string: type == "string" and length > 0;
     def slug($max): type == "string" and test("^[A-Za-z0-9._-]{1," + ($max | tostring) + "}$");
     def repo_marker: has("repo") and (.repo == null or (.repo | type == "string"));
@@ -133,6 +165,10 @@ validate_payload() {  # <data.json>
       or (.[$name]
         | type == "string"
           and test("^https://[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?(?::[0-9]{1,5})?(?:[/?#][^[:space:]]*)?$"));
+    def optional_ticket: (has("ticket") | not) or (.ticket == null) or (.ticket | slug(128));
+    def optional_waiting_on:
+      (has("waiting_on") | not)
+      or (.waiting_on == "captain" or .waiting_on == "fleet" or .waiting_on == "blocked");
     def version: type == "string" and test("^(0|[1-9][0-9]{0,8})\\.(0|[1-9][0-9]{0,8})\\.(0|[1-9][0-9]{0,8})$");
     def optional_subject:
       (has("subject") | not)
@@ -168,40 +204,143 @@ validate_payload() {  # <data.json>
           and (.recommend_value as $recommend
             | ([.options[].value] | index($recommend) != null))))
       and ([.options[].value] | index("reconcile") == null)
-      and (if .type == "merge" then (.risk | nonempty_string) else true end);
+      and (if .type == "merge" then (.risk | nonempty_string) else true end)
+      and optional_ticket
+      and optional_waiting_on;
     def underway_item:
       type == "object" and repo_marker and name_marker and (.id | nonempty_string)
-      and (.state | nonempty_string) and (.doing | nonempty_string) and (.kind | nonempty_string);
+      and (.state | nonempty_string) and (.doing | nonempty_string) and (.kind | nonempty_string)
+      and optional_ticket;
     def landed_item:
       type == "object" and repo_marker and (.id | nonempty_string)
       and (.what | nonempty_string) and (.owner | nonempty_string)
       and optional_https_url("pr_url")
-      and optional_subject;
+      and optional_subject
+      and optional_ticket;
     def charted_item:
       type == "object" and repo_marker and (.id | slug(128))
       and (.title | nonempty_string) and (.reason | type == "string")
       and (.dispatchable | type == "boolean")
       and ((has("kind") | not) or (.kind == "queued" or .kind == "warning"))
       and optional_filed
-      and (if .kind == "warning" then .dispatchable == false else true end);
-    type == "object"
-    and (.schema == $schema)
-    and (.home | nonempty_string)
-    and (.generated | nonempty_string)
-    and (.prs_live | type == "boolean")
-    and (.captains_call | type == "array")
-    and (.underway | type == "array")
-    and (.landed | type == "array")
-    and (.charted | type == "array")
-    and ((has("charted_more") | not)
-      or ((.charted_more | type == "number") and (.charted_more >= 0) and (.charted_more | floor == .)))
-    and ((has("charted_warning_more") | not)
-      or ((.charted_warning_more | type == "number") and (.charted_warning_more >= 0) and (.charted_warning_more | floor == .)))
-    and ([.captains_call[] | call_item] | all)
-    and ([.underway[] | underway_item] | all)
-    and ([.landed[] | landed_item] | all)
-    and ([.charted[] | charted_item] | all)
-  ' "$1" >/dev/null
+      and (if .kind == "warning" then .dispatchable == false else true end)
+      and optional_ticket
+      and optional_waiting_on;
+    def advice_item:
+      type == "object"
+      and (.id | slug(128))
+      and (.title | nonempty_string)
+      and (.verdict | nonempty_string)
+      and (.pros | type == "array") and ([.pros[] | nonempty_string] | all)
+      and (.cons | type == "array") and ([.cons[] | nonempty_string] | all)
+      and (.recommendation | type == "string")
+      and optional_string("effort")
+      and optional_string("risk");
+    def stalled_item:
+      type == "object" and repo_marker
+      and (.id | slug(128))
+      and (.name | nonempty_string)
+      and ((has("kind") | not) or (.kind == "dead" or .kind == "failed" or .kind == "paused"))
+      and ((has("started") | not) or (.started == null) or (.started | type == "string"))
+      and (.last_state | nonempty_string)
+      and (.why | type == "string")
+      and (.next | type == "string")
+      and ((has("resumable") | not) or (.resumable | type == "boolean"))
+      and optional_ticket
+      and optional_waiting_on;
+    def delivered_item:
+      type == "object" and repo_marker
+      and (.ticket | slug(128))
+      and (.what | nonempty_string)
+      and optional_string("result")
+      and ((has("delivered_at") | not) or (.delivered_at == null) or (.delivered_at | type == "string"))
+      and (optional_https_url("report_url"))
+      and (optional_https_url("pr_url"))
+      and optional_waiting_on;
+    def grill_item:
+      type == "object"
+      and (.ticket | slug(128))
+      and (.prompt | nonempty_string)
+      and (.options | type == "array") and ((.options | length) > 0)
+      and ([.options[]
+        | type == "object"
+          and (.value | slug(128))
+          and (.label | nonempty_string)
+          and optional_string("hint")] | all)
+      and ((has("allow_freeform") | not) or (.allow_freeform | type == "boolean"))
+      and ((has("recommend_value") | not)
+        or ((.recommend_value | slug(128))
+          and (.recommend_value as $recommend
+            | ([.options[].value] | index($recommend) != null))))
+      and optional_waiting_on;
+    def ticket_question:
+      type == "object"
+      and (.prompt | nonempty_string)
+      and (.options | type == "array") and ((.options | length) > 0)
+      and ([.options[]
+        | type == "object"
+          and (.value | slug(128))
+          and (.label | nonempty_string)
+          and optional_string("hint")] | all)
+      and ((has("allow_freeform") | not) or (.allow_freeform | type == "boolean"))
+      and ((has("recommend_value") | not)
+        or ((.recommend_value | slug(128))
+          and (.recommend_value as $recommend
+            | ([.options[].value] | index($recommend) != null))));
+    def ticket_item:
+      type == "object" and repo_marker
+      and (.id | slug(128))
+      and (.title | nonempty_string)
+      and (.state == "captain" or .state == "doing" or .state == "blocked"
+           or .state == "delivered" or .state == "closed")
+      and optional_string("owner")
+      and optional_string("summary")
+      and ((has("opened_at") | not) or (.opened_at == null) or (.opened_at | type == "string"))
+      and ((has("updated_at") | not) or (.updated_at == null) or (.updated_at | type == "string"))
+      and ((has("history") | not)
+        or ((.history | type) == "array") and ([.history[] | nonempty_string] | all))
+      and ((has("learnings") | not)
+        or ((.learnings | type) == "array") and ([.learnings[] | nonempty_string] | all))
+      and ((has("questions") | not)
+        or ((.questions | type) == "array") and ([.questions[] | ticket_question] | all));
+    def optional_array($name; predicate; $message):
+      if (has($name) | not) then empty
+      elif ((.[$name] | type) == "array") and ([.[$name][] | predicate] | all) then empty
+      else $message end;
+    . as $p
+    | if ($p | type) != "object" then ["board data is not a JSON object"]
+      else
+        [
+          (if $p.schema != $schema then "schema must be \($schema)" else empty end),
+          (if ($p.home | nonempty_string) then empty else "home must be a non-empty string" end),
+          (if ($p.generated | nonempty_string) then empty else "generated must be a non-empty string" end),
+          (if ($p.prs_live | type) == "boolean" then empty else "prs_live must be a boolean" end),
+          (if (($p.captains_call | type) == "array") and ([$p.captains_call[] | call_item] | all) then empty
+           else "captains_call must be an array of valid decision, merge, or credential cards" end),
+          (if (($p.underway | type) == "array") and ([$p.underway[] | underway_item] | all) then empty
+           else "underway must be an array of rows carrying repo, name, id, state, doing, and kind" end),
+          (if (($p.landed | type) == "array") and ([$p.landed[] | landed_item] | all) then empty
+           else "landed must be an array of rows carrying repo, id, what, and owner" end),
+          (if (($p.charted | type) == "array") and ([$p.charted[] | charted_item] | all) then empty
+           else "charted must be an array of rows carrying repo, id, title, reason, and dispatchable" end),
+          (if ((($p | has("charted_more")) | not) or ((($p.charted_more | type) == "number") and ($p.charted_more >= 0) and ($p.charted_more | floor == .))) then empty
+           else "charted_more must be a non-negative whole number" end),
+          (if ((($p | has("charted_warning_more")) | not) or ((($p.charted_warning_more | type) == "number") and ($p.charted_warning_more >= 0) and ($p.charted_warning_more | floor == .))) then empty
+           else "charted_warning_more must be a non-negative whole number" end),
+          ($p | optional_array("advice"; advice_item;
+            "advice must be an array of {id, title, verdict, pros[], cons[], recommendation}")),
+          ($p | optional_array("stalled"; stalled_item;
+            "stalled must be an array of rows carrying id, name, repo, last_state, why, next, and a dead/failed/paused kind")),
+          ($p | optional_array("delivered"; delivered_item;
+            "delivered must be an array of rows carrying ticket, repo, and what")),
+          ($p | optional_array("grill"; grill_item;
+            "grill must be an array of questions carrying ticket, prompt, and options")),
+          ($p | optional_array("tickets"; ticket_item;
+            "tickets must be an array of kanban cards carrying id, title, repo, and a captain/doing/blocked/delivered/closed state"))
+        ]
+      end
+  ' "$1" 2>/dev/null) || failures='["board data is not valid JSON"]'
+  [ "$failures" = "[]" ] || fail "board data does not satisfy $BOARD_SCHEMA: $1 ($(printf '%s' "$failures" | jq -r 'join("; ")' 2>/dev/null || printf 'invalid'))"
 }
 
 # --- Lavish session liveness -------------------------------------------------
