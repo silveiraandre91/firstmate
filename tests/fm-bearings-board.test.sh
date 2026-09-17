@@ -250,6 +250,8 @@ test_build_validates_the_captain_surfaces() {
   assert_surface_refused '.grill=[{"ticket":"g","prompt":"Q?","options":[{"value":"reconcile","label":"Re-check"}]}]' grill "a question occupying the reserved reconcile value"
   assert_surface_refused '.tickets=[{"id":"t","title":"T","repo":null,"state":"captain","questions":[{"prompt":"Q?","options":[{"value":"reconcile","label":"Re-check"}]}]}]' tickets "a kanban question occupying the reserved reconcile value"
   assert_surface_refused '.tickets=[{"id":"t","title":"T","repo":null,"state":"captain","report_url":"javascript:alert(1)"}]' tickets "a kanban card with a non-HTTPS report link"
+  assert_surface_refused '.charted=[{"id":("x"*116),"repo":"sample","title":"T","reason":"","dispatchable":true}]' charted "a charted id too long for a prefixed click key"
+  assert_surface_refused '.grill=[{"ticket":("x"*116),"prompt":"Q?","options":[{"value":"a","label":"A"}]}]' grill "a question ticket too long for a prefixed click key"
   pass "build validates every captain surface and names the one that fails"
 }
 

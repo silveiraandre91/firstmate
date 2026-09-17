@@ -147,6 +147,11 @@ validate_payload() {  # <data.json>
   failures=$(jq -c --arg schema "$BOARD_SCHEMA" '
     def nonempty_string: type == "string" and length > 0;
     def slug($max): type == "string" and test("^[A-Za-z0-9._-]{1," + ($max | tostring) + "}$");
+    # An id carried into a PREFIXED click key (`dispatch.<id>`, `resume.<id>`,
+    # `approve.<ticket>`, `grill.<n>.<ticket>`) must leave room for the longest
+    # prefix inside the 128-character key cap the intake enforces, or the
+    # annotation is dropped in silence. 115 leaves room for `grill.<nnn>.`.
+    def click_slug: slug(115);
     def repo_marker: has("repo") and (.repo == null or (.repo | type == "string"));
     def name_marker: has("name") and (.name | nonempty_string);
     def valid_filed:
@@ -218,7 +223,7 @@ validate_payload() {  # <data.json>
       and optional_subject
       and optional_ticket;
     def charted_item:
-      type == "object" and repo_marker and (.id | slug(128))
+      type == "object" and repo_marker and (.id | click_slug)
       and (.title | nonempty_string) and (.reason | type == "string")
       and (.dispatchable | type == "boolean")
       and ((has("kind") | not) or (.kind == "queued" or .kind == "warning"))
@@ -238,7 +243,7 @@ validate_payload() {  # <data.json>
       and optional_string("risk");
     def stalled_item:
       type == "object" and repo_marker
-      and (.id | slug(128))
+      and (.id | click_slug)
       and (.name | nonempty_string)
       and ((has("kind") | not) or (.kind == "dead" or .kind == "failed" or .kind == "paused"))
       and ((has("started") | not) or (.started == null) or (.started | type == "string"))
@@ -250,7 +255,7 @@ validate_payload() {  # <data.json>
       and optional_waiting_on;
     def delivered_item:
       type == "object" and repo_marker
-      and (.ticket | slug(128))
+      and (.ticket | click_slug)
       and (.what | nonempty_string)
       and optional_string("result")
       and ((has("delivered_at") | not) or (.delivered_at == null) or (.delivered_at | type == "string"))
@@ -259,7 +264,7 @@ validate_payload() {  # <data.json>
       and optional_waiting_on;
     def grill_item:
       type == "object"
-      and (.ticket | slug(128))
+      and (.ticket | click_slug)
       and (.prompt | nonempty_string)
       and (.options | type == "array") and ((.options | length) > 0)
       and ([.options[]
@@ -291,7 +296,7 @@ validate_payload() {  # <data.json>
       and ([.options[].value] | index("reconcile") == null);
     def ticket_item:
       type == "object" and repo_marker
-      and (.id | slug(128))
+      and (.id | click_slug)
       and (.title | nonempty_string)
       and (.state == "captain" or .state == "doing" or .state == "blocked"
            or .state == "delivered" or .state == "closed")
