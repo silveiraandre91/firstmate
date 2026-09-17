@@ -210,7 +210,9 @@ test_build_validates_the_captain_surfaces() {
         options:[{value:"a", label:"GitHub"}, {value:"b", label:"Local", hint:"no quota"}]}]
     | .tickets = [{id:"delivered-1", title:"Fix the parser", state:"delivered", repo:"sample",
         owner:"agent ship", summary:"handed over, awaiting approval", opened_at:"2026-09-17T12:00:00Z",
-        updated_at:"2026-09-17T13:00:00Z", history:["12:05 reproduced the bug", "13:00 tests green"],
+        updated_at:"2026-09-17T13:00:00Z", delivered_at:"2026-09-17T13:00:00Z",
+        result:"all tests green", report_url:"https://example.test/report",
+        history:["12:05 reproduced the bug", "13:00 tests green"],
         learnings:["the parser assumed LF line endings"],
         questions:[{prompt:"Ship it?", options:[{value:"a", label:"Yes"}]}]},
       {id:"done-1", title:"Earlier matter", state:"closed", repo:null}]
@@ -222,6 +224,7 @@ test_build_validates_the_captain_surfaces() {
       and (.stalled | length) == 2 and .stalled[0].kind == "dead"
       and (.delivered | length) == 1 and .delivered[0].ticket == "delivered-1"
       and (.grill | length) == 1 and (.tickets | length) == 2
+      and .tickets[0].report_url == "https://example.test/report"
   ' >/dev/null || fail "the captain surfaces did not survive the built board"
 
   # Each malformed captain surface refuses and names the surface.
@@ -244,6 +247,9 @@ test_build_validates_the_captain_surfaces() {
   assert_surface_refused '.grill=[{"ticket":"g","prompt":"Q?","options":[]}]' grill "a question with no options"
   assert_surface_refused '.tickets=[{"id":"t","title":"T","repo":null,"state":"finished"}]' tickets "a kanban card with an unknown state"
   assert_surface_refused '.tickets=[{"id":"t","title":"T","repo":null,"state":"captain","questions":[{"prompt":"Q?","options":[{"label":"No value"}]}]}]' tickets "a kanban question whose option has no value"
+  assert_surface_refused '.grill=[{"ticket":"g","prompt":"Q?","options":[{"value":"reconcile","label":"Re-check"}]}]' grill "a question occupying the reserved reconcile value"
+  assert_surface_refused '.tickets=[{"id":"t","title":"T","repo":null,"state":"captain","questions":[{"prompt":"Q?","options":[{"value":"reconcile","label":"Re-check"}]}]}]' tickets "a kanban question occupying the reserved reconcile value"
+  assert_surface_refused '.tickets=[{"id":"t","title":"T","repo":null,"state":"captain","report_url":"javascript:alert(1)"}]' tickets "a kanban card with a non-HTTPS report link"
   pass "build validates every captain surface and names the one that fails"
 }
 

@@ -272,6 +272,7 @@ validate_payload() {  # <data.json>
         or ((.recommend_value | slug(128))
           and (.recommend_value as $recommend
             | ([.options[].value] | index($recommend) != null))))
+      and ([.options[].value] | index("reconcile") == null)
       and optional_waiting_on;
     def ticket_question:
       type == "object"
@@ -286,7 +287,8 @@ validate_payload() {  # <data.json>
       and ((has("recommend_value") | not)
         or ((.recommend_value | slug(128))
           and (.recommend_value as $recommend
-            | ([.options[].value] | index($recommend) != null))));
+            | ([.options[].value] | index($recommend) != null))))
+      and ([.options[].value] | index("reconcile") == null);
     def ticket_item:
       type == "object" and repo_marker
       and (.id | slug(128))
@@ -302,7 +304,11 @@ validate_payload() {  # <data.json>
       and ((has("learnings") | not)
         or ((.learnings | type) == "array") and ([.learnings[] | nonempty_string] | all))
       and ((has("questions") | not)
-        or ((.questions | type) == "array") and ([.questions[] | ticket_question] | all));
+        or ((.questions | type) == "array") and ([.questions[] | ticket_question] | all))
+      and optional_string("result")
+      and ((has("delivered_at") | not) or (.delivered_at == null) or (.delivered_at | type == "string"))
+      and (optional_https_url("report_url"))
+      and (optional_https_url("pr_url"));
     def optional_array($name; predicate; $message):
       if (has($name) | not) then empty
       elif ((.[$name] | type) == "array") and ([.[$name][] | predicate] | all) then empty
