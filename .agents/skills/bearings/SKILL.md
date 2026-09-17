@@ -157,6 +157,8 @@ The template also records every accepted action locally and renders it at once i
 ### Live notice and sound
 
 The shipped template watches its own page, re-renders itself when the rebuilt board differs, and shows what changed without a reload.
+A kanban ticket that appears or changes state is announced too, so a matter moving from `doing` to `delivered` reaches the captain without a reload.
+A new report becomes news through the ticket it belongs to: record it as a dated `history` entry on that card, or as a delivered item, because the board has no separate reports surface of its own.
 What counts as already-seen is stored per board path, so the notice survives an F5.
 Sound is off until the captain turns it on with the visible `Sound` button; the chime is generated with Web Audio, needs no external library or audio file, and falls back to the on-screen notice alone when the browser blocks audio.
 Do not promise the captain audio that the browser has not unlocked.

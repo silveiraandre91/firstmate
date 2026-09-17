@@ -51,6 +51,10 @@
 }
 
 * { box-sizing: border-box; }
+/* The `hidden` attribute must win over an author display rule. Several sections
+   and the live notice set `display: flex`, which otherwise overrides the UA
+   `[hidden] { display: none }` and leaves empty surfaces visible on every load. */
+[hidden] { display: none !important; }
 html, body { margin: 0; padding: 0; }
 body {
   font-family: var(--font-sans);
@@ -289,7 +293,7 @@ a { color: inherit; text-decoration: none; }
   letter-spacing: 0.06em; border-radius: var(--radius-xs); padding: 4px 8px 3px; white-space: nowrap;
   border: 1px solid var(--border-default); background: var(--paper-000); color: var(--text-muted);
 }
-.bb-wait--captain { background: var(--rust-050); border-color: var(--rust-300); color: var(--rust-700); }
+.bb-wait--captain, .bb-wait--delivered { background: var(--rust-050); border-color: var(--rust-300); color: var(--rust-700); }
 .bb-wait--fleet { background: var(--ocean-050); border-color: var(--ocean-200); color: var(--ocean-600); }
 .bb-wait--blocked { background: var(--status-warn-soft); border-color: var(--gold-300); color: var(--status-warn); }
 
@@ -616,7 +620,7 @@ __FM_BEARINGS_BOARD_DATA__
   function badge(tone, text) { return el("span", "fm-badge fm-badge--" + tone, text); }
   function ticketChip(id) { return el("span", "bb-ticket", "#" + id); }
   function waitingLabel(state) {
-    if (state === "captain") return "awaiting you";
+    if (state === "captain" || state === "delivered") return "awaiting you";
     if (state === "blocked") return "blocked";
     return "running";
   }
@@ -842,8 +846,10 @@ __FM_BEARINGS_BOARD_DATA__
     deck.classList.toggle("bb-call--last", active === cards.length - 1);
   }
   if (cards.length) {
-    stackPrev.addEventListener("click", function () { showCard(active - 1); });
-    stackNext.addEventListener("click", function () { showCard(active + 1); });
+    /* onclick, not addEventListener: renderBoard re-runs on every live rebuild
+       and these nodes persist, so a fresh listener each pass would stack. */
+    stackPrev.onclick = function () { showCard(active - 1); };
+    stackNext.onclick = function () { showCard(active + 1); };
     stackNav.hidden = false;
     showCard(0);
   } else {
@@ -987,7 +993,8 @@ __FM_BEARINGS_BOARD_DATA__
   if (anyPickable) {
     bar.hidden = false;
     refreshBar();
-    barBtn.addEventListener("click", function () {
+    /* onclick, not addEventListener: this node persists across re-renders. */
+    barBtn.onclick = function () {
       var ids = pickedIds();
       var dispatchAnswer = ids.join(",");
       if (!ids.length) return;
@@ -1005,7 +1012,7 @@ __FM_BEARINGS_BOARD_DATA__
       }
       bar.classList.add("is-queued");
       ids.forEach(function (id) { markAccepted({ ticket: id, what: id, action: "dispatch" }); });
-    });
+    };
   }
 
   /* ---- Questions (grill): numbered asks answered over the same channel ---- */
@@ -1307,7 +1314,7 @@ __FM_BEARINGS_BOARD_DATA__
     var top = el("div", "bb-card__top");
     top.appendChild(ticketChip(t.id));
     if (!compact) {
-      top.appendChild(waitingChip(t.state === "captain" ? "captain" : (t.state === "blocked" ? "blocked" : "fleet")));
+      top.appendChild(waitingChip(t.state === "doing" ? "fleet" : t.state));
     }
     card.appendChild(top);
     card.appendChild(el("div", "bb-card__title", t.title));
@@ -1481,7 +1488,8 @@ __FM_BEARINGS_BOARD_DATA__
         (e.action || "answer") + " accepted from the board · firstmate is dispatching · since " + (e.at || "now")));
       var chips = el("div", "bb-chips");
       chips.appendChild(ticketChip(e.ticket));
-      chips.appendChild(waitingChip("fleet"));
+      /* The ordered work is the fleet's turn, not a running worker yet. */
+      chips.appendChild(el("span", "bb-wait bb-wait--fleet", "dispatching"));
       main.appendChild(chips);
       row.appendChild(main);
       wrap.appendChild(row);
@@ -1517,6 +1525,15 @@ __FM_BEARINGS_BOARD_DATA__
     add("now underway", prev.underway, next.underway, function (x) { return x.id; });
     add("new charted work", prev.charted, next.charted, function (x) { return x.id; });
     add("new note", prev.advice, next.advice, function (x) { return x.id; });
+    /* The kanban is the captain's ticket list, so a new or moved card is news
+       too, even when the standalone arrays are empty in kanban mode. */
+    var beforeState = {};
+    (prev.tickets || []).forEach(function (t) { if (t && t.id) beforeState[t.id] = t.state; });
+    (next.tickets || []).forEach(function (t) {
+      if (!t || !t.id) return;
+      if (!Object.prototype.hasOwnProperty.call(beforeState, t.id)) out.push("new ticket " + t.id);
+      else if (beforeState[t.id] !== t.state) out.push(t.id + " is now " + t.state);
+    });
     return out;
   }
   function setSound(on) {

@@ -75,6 +75,10 @@ class Node {
   }
   setAttribute(k, v) { this.attributes[k] = v; }
   addEventListener(type, fn) { (this.handlers[type] = this.handlers[type] || []).push(fn); }
+  // The shipped template uses onclick on persistent controls so a live re-render
+  // cannot stack listeners; expose it through the same handler table.
+  get onclick() { return this.handlers.click ? this.handlers.click[0] : null; }
+  set onclick(fn) { this.handlers.click = fn ? [fn] : []; }
   querySelectorAll(sel) {
     const want = sel.replace(/^\./, "").replace(/:checked$/, "");
     const checkedOnly = sel.endsWith(":checked");
@@ -310,6 +314,7 @@ const kanban = (byId.get("bb-kanban") || new Node("div")).children.map((col) => 
       meta: find(card, "bb-card__meta")?.textContent ?? "",
       summary: find(card, "bb-card__summary")?.textContent ?? "",
       kasten: !!find(card, "bb-approve"),
+      wait: find(card, "bb-wait")?.textContent ?? "",
       questions: card.children.filter((c) => c.tagName === "form").length,
       text: card.textContent,
       history: (findAll(card, "bb-card__list").filter((l) => !l.className.includes("bb-card__learnings"))[0]?.children || [])
@@ -342,6 +347,7 @@ const live = {
   chimes: globalThis.window.fmBearingsBoard ? globalThis.window.fmBearingsBoard.liveState.chimes : 0,
   notice: globalThis.window.fmBearingsBoard ? globalThis.window.fmBearingsBoard.liveState.notice : "",
   intervalArmed: liveMode ? typeof globalThis.window.__interval === "function" : false,
+  dispatchListeners: (byId.get("bb-dispatch-btn")?.handlers?.click || []).length,
 };
 
 process.stdout.write(

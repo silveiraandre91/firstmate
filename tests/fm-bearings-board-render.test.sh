@@ -397,8 +397,8 @@ test_the_board_notices_a_rebuild_without_a_reload_and_sounds_when_asked() {
   local home other board1 board2 out payload1 payload2
   home=$(make_home live-notice)
   other=$(make_home live-notice-next)
-  payload1=$(surface_payload '{"delivered":[{"ticket":"d1","repo":"sample","what":"First"}]}')
-  payload2=$(surface_payload '{"delivered":[{"ticket":"d1","repo":"sample","what":"First"},{"ticket":"d2","repo":"sample","what":"Second"}]}')
+  payload1=$(surface_payload '{"delivered":[{"ticket":"d1","repo":"sample","what":"First"}],"charted":[{"id":"c1","repo":"sample","title":"Queued work","reason":"","dispatchable":true}]}')
+  payload2=$(surface_payload '{"delivered":[{"ticket":"d1","repo":"sample","what":"First"},{"ticket":"d2","repo":"sample","what":"Second"}],"charted":[{"id":"c1","repo":"sample","title":"Queued work","reason":"","dispatchable":true}]}')
   board1=$(build_payload "$home" "$payload1")
   board2=$(build_payload "$other" "$payload2")
   out=$(FM_HARNESS_LIVE=1 FM_HARNESS_NEXT_HTML="$board2" FM_HARNESS_LIVE_REFRESH=1 FM_HARNESS_LIVE_SOUND=1 \
@@ -410,9 +410,28 @@ test_the_board_notices_a_rebuild_without_a_reload_and_sounds_when_asked() {
       and (.live.banner | test("delivered, awaiting you: 1"))
       and .live.chimes == 1
       and .live.intervalArmed == true
+      and .live.dispatchListeners == 1
       and (.delivered | length) == 2
   ' >/dev/null || fail "a rebuilt board was not noticed live, or the re-render appended instead of replacing: $out"
   pass "the board re-renders in place on a rebuild, announces what changed, and chimes only when sound is on"
+}
+
+test_a_ticket_state_change_is_announced_live() {
+  local home other board1 board2 out payload1 payload2
+  home=$(make_home live-ticket-change)
+  other=$(make_home live-ticket-change-next)
+  payload1=$(surface_payload '{"tickets":[{"id":"t-1","title":"Handed over","state":"doing","repo":"proj"}]}')
+  payload2=$(surface_payload '{"tickets":[{"id":"t-1","title":"Handed over","state":"delivered","repo":"proj"}]}')
+  board1=$(build_payload "$home" "$payload1")
+  board2=$(build_payload "$other" "$payload2")
+  out=$(FM_HARNESS_LIVE=1 FM_HARNESS_NEXT_HTML="$board2" FM_HARNESS_LIVE_REFRESH=1 node "$HARNESS" "$board1") \
+    || fail "the live harness failed"
+  printf '%s' "$out" | jq -e '
+    .live.bannerHidden == false
+      and (.live.banner | test("t-1 is now delivered"))
+      and (.kanban[3].cards[0].wait == "awaiting you")
+  ' >/dev/null || fail "a kanban-only change was not announced, or the delivered card still said running: $out"
+  pass "a kanban-only ticket change is announced live and a delivered card waits on the captain"
 }
 
 test_a_notice_survives_a_reload_because_it_is_stored_per_board_path() {
@@ -446,7 +465,7 @@ test_a_kanban_delivered_card_reaches_its_report_and_delivery_time() {
   printf '%s' "$out" | jq -e '
     (.kanban[3].cards | length) == 1
       and (.kanban[3].cards[0]
-        | .kasten == true
+        | .kasten == true and .wait == "awaiting you"
           and (.meta | test("delivered 2026-09-17T13:00:00Z"))
           and (.text | test("all tests green"))
           and (.text | test("https://example.test/report"))
@@ -581,3 +600,4 @@ test_a_notice_survives_a_reload_because_it_is_stored_per_board_path
 test_a_kanban_delivered_card_reaches_its_report_and_delivery_time
 test_a_live_rebuild_that_empties_a_section_hides_it
 test_a_resolved_ticket_drops_its_accepted_placeholder
+test_a_ticket_state_change_is_announced_live
