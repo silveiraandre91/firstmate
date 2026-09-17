@@ -3361,9 +3361,104 @@ test_partial_github_failure_degrades
 test_perl_fallback_bounds_github_call
 test_section_caps_and_expansion_flags
 test_collapsed_captain_call_deferral_and_landed
+test_stalled_projection_names_stopped_work_without_inventing_detection() {
+  local home fakebin json
+  home=$(make_home stalled)
+  : > "$home/data/secondmates.md"
+  cat > "$home/data/backlog.md" <<'EOF'
+## In flight
+- [ ] dead-worker - Dead worker task (repo: firstmate) (kind: ship) (since 2026-07-11)
+- [ ] failed-worker - Failed worker task (repo: firstmate) (kind: ship) (since 2026-07-11)
+- [ ] done-worker - Finished worker task (repo: firstmate) (kind: ship) (since 2026-07-11)
+
+## Queued
+
+## Done
+EOF
+  mkdir -p "$home/projects/dead-wt" "$home/projects/failed-wt" "$home/projects/done-wt"
+  # A worker whose backend window is gone: the fake tmux reports any `dead-`
+  # target missing, which is the canonical snapshot's endpoint signal.
+  fm_write_meta "$home/state/dead-worker.meta" \
+    "window=firstmate:fm-dead-worker" \
+    "worktree=$home/projects/dead-wt" "project=firstmate" \
+    "harness=claude" "kind=ship" "mode=no-mistakes" \
+    "spawn_gen=s1789653285.620114.561"
+  record_claude_state "$home/state" dead-worker busy
+  printf 'working: building the thing\n' > "$home/state/dead-worker.status"
+  # A worker that reported its own failure.
+  fm_write_meta "$home/state/failed-worker.meta" \
+    "window=firstmate:fm-failed-worker" \
+    "worktree=$home/projects/failed-wt" "project=firstmate" \
+    "harness=claude" "kind=ship" "mode=no-mistakes"
+  record_claude_state "$home/state" failed-worker idle
+  printf 'failed: the build broke\n' > "$home/state/failed-worker.status"
+  # A worker that finished normally keeps its meta until teardown while its
+  # backend window is already gone: that is completed work, not stopped work.
+  fm_write_meta "$home/state/done-worker.meta" \
+    "window=firstmate:fm-dead-done" \
+    "worktree=$home/projects/done-wt" "project=firstmate" \
+    "harness=claude" "kind=ship" "mode=no-mistakes"
+  record_claude_state "$home/state" done-worker idle
+  printf 'done: the delivery landed\n' > "$home/state/done-worker.status"
+  # An unresolved FAILED terminal outcome for a task already torn down, plus a
+  # resolved one that must never be shown as stopped work.
+  mkdir -p "$home/state/terminal-outcomes"
+  cat > "$home/state/terminal-outcomes/aaaa1111bbbb.pending" <<'EOF'
+schema=fm-terminal-outcome.v1
+fingerprint=aaaa1111bbbb
+task_id=gone-worker
+incarnation=s1789649900.401022.26685
+state=failed
+outcome_key=inactive-outcome-main-gone-worker-failed
+origin=direct
+pr=
+created_epoch=1789651851
+notice_emitted=0
+phase=presentation
+EOF
+  sed 's/task_id=gone-worker/task_id=resolved-worker/' \
+    "$home/state/terminal-outcomes/aaaa1111bbbb.pending" \
+    > "$home/state/terminal-outcomes/cccc2222dddd.presented"
+  fakebin=$(make_fakebin "$home")
+  json=$(run "$home" "$fakebin" --json)
+  printf '%s' "$json" | jq -e '
+    (.stalled | map(.id) | sort) == ["dead-worker", "failed-worker", "gone-worker"]
+      and (.stalled | map(select(.id == "dead-worker"))[0]
+        | .kind == "dead" and .started == "2026-09-17T13:54:45Z"
+          and .resumable == true
+          and (.why | length) > 0 and (.next | length) > 0)
+      and (.stalled | map(select(.id == "failed-worker"))[0]
+        | .kind == "failed" and .last_state == "failed")
+      and (.stalled | map(select(.id == "gone-worker"))[0]
+        | .kind == "failed" and .resumable == false and .started == "2026-09-17T12:58:20Z")
+      and ((.stalled | map(.id) | index("done-worker")) == null)
+  ' >/dev/null || fail "the stalled projection did not name stopped work faithfully: $json"
+  pass "stalled consumes dead endpoints, failed states, and unresolved failed outcomes without inventing detection"
+}
+
+test_newest_filed_gates_report_their_full_text() {
+  local home fakebin json long
+  home=$(make_home full-gate-text)
+  : > "$home/data/secondmates.md"
+  long=$(printf "y%.0s" $(seq 1 2500))
+  printf '## In flight\n\n## Queued\n' > "$home/data/backlog.md"
+  printf -- '- [ ] long-gate - %s (repo: sample) (kind: ship) (since 2026-07-01)\n\n## Done\n' \
+    "$long" >> "$home/data/backlog.md"
+  fakebin=$(make_fakebin "$home")
+  json=$(run "$home" "$fakebin" --json)
+  printf '%s' "$json" | jq -e --arg long "$long" '
+    (.gates | length) == 1
+      and (.gates[0].title == $long)
+      and (.gates[0].title | contains("…") | not)
+  ' >/dev/null || fail "a long gate title was clipped before the board could render it: $json"
+  pass "a gate keeps its full decision text through the projection"
+}
+
 test_undated_hold_phrasing_and_aging_projection
 test_blocked_deferred_hold_has_concrete_disclosure
 test_revealed_deferred_holds_show_their_deferral_reason
 test_pr_repository_cap_and_expansion
 test_per_repository_pr_cap_is_disclosed
 test_projection_and_toon_fail_closed
+test_stalled_projection_names_stopped_work_without_inventing_detection
+test_newest_filed_gates_report_their_full_text

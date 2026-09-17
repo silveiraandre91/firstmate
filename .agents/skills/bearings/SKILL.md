@@ -114,6 +114,55 @@ Compose the payload from the same snapshot with the same ranking judgment as the
   Omit it or pass null for a row with no durable filed date - the main-inventory or return-catchup warning, an unavailable secondmate home, or a queued row filed before dates were recorded - and the board keeps those rows in payload order after every dated row.
 - Every Captain's Call item and every Underway, Recently Landed, and Charted Next row carries an explicit `repo` field. Fill it from the snapshot and task records wherever known; use null or an empty string only as the deliberate genuinely-no-repo marker, in which case the template may show the internal id. Ids otherwise stay in the payload only as the routing channel, and composed reasons name blockers in plain words.
 
+### Board sections beyond the four chat sections
+
+The board carries five optional captain surfaces beside the four fleet sections: `advice`, `stalled`, `delivered`, `grill`, and `tickets`.
+`bin/fm-bearings-board.sh`'s header owns their exact shapes; compose them from the same snapshot with the same ranking judgment.
+
+- `advice` is YOUR critical read, not a restatement of status: one item per improvement idea, with a `title`, a one-line `verdict`, short `pros` and `cons` lists, a `recommendation`, and optional `effort`/`risk` words.
+  Write it as an opinion the captain can disagree with, and prefer a few sharp items over a long survey; it renders in its own My Take section, visually distinct from decisions.
+- `stalled` names work whose worker stopped: take each row from the snapshot's `stalled` projection, keep its `id`, `kind`, `last_state`, `started`, `why`, and `resumable`, and rewrite `next` as the concrete way the work continues.
+  A stopped worker is never silently dropped and never silently restarted; it appears in Adrift until the work actually resumes or the captain resolves it.
+- `delivered` is work handed over but NOT approved.
+  A delivery whose approval has not arrived yet NEVER appears in `landed`; put it in `delivered` with its delivery time, a one-line `result`, the report or PR link, and its ticket id.
+  The card stays until the captain clicks its approval box, and delivering is not closing.
+- `grill` is the numbered questions the captain must answer, each with a `ticket`, a `prompt`, and `options`.
+  Ask several at once instead of guessing, keep every question answerable by click, and never invent an option the captain did not offer.
+- `tickets` is the kanban view: one card per captain matter, so his list is the board itself.
+  EVERY captain message becomes a card, however trivial, and nothing he said is dropped.
+  Each card carries the ticket id, `opened_at`, the owner (who is doing it), a one-line `summary`, a dated `history` of what was done, `learnings` from the process (an error's cause, a cost, a trick), and any `questions` for that matter.
+  A delivered card also carries its `delivered_at`, `result`, and `report_url`/`pr_url`, so the delivery detail stays reachable when the kanban owns the delivered cards.
+  `state` is one of `captain`, `doing`, `blocked`, `delivered`, or `closed`.
+  A card moves to `closed` only after the captain clicks resolved; delivering moves it to `delivered`, never out of the list.
+  When `tickets` is present the board renders the kanban and folds the delivered and question cards into it, so compose the kanban in preference to the standalone sections.
+  After a delivery the agent stays on call on the same card and answers follow-up questions there; the card closes on the captain's click alone.
+
+### Execution clicks
+
+Every dispatchable Charted Next row carries its own `Dispatch now` control, a stopped row carries `Resume`, a delivered card carries the approval checkbox, and a question carries its options.
+Each control queues one `choice` annotation on the SAME board feedback channel as a decision card - never a new channel - and each key has a fixed parseable shape:
+
+- `dispatch.charted` - the batch picker's key; its value is the comma-separated task ids the captain picked.
+- `dispatch.<task-id>` - one row's Dispatch now click, for exactly that task.
+- `resume.<task-id>` - continue that stopped worker on its existing record.
+- `approve.<ticket-id>` - the captain's approval that closes that delivered matter.
+- `grill.<question-number>.<ticket-id>` - one answer to one numbered question.
+
+A click is an ORDER, never merely a recorded preference.
+The captain already decided by clicking, so firstmate does not ask again: on a dispatch key it verifies the id is still queued with its blocker and date gate clear and then dispatches it; on a resume key it continues the stopped work; on an approval key it treats the click as the captain's explicit word for that exact delivery.
+A key that no longer qualifies is reported, never forced.
+Repeating a click is safe: the second one finds the work already under way and is a no-op rather than a second dispatch.
+The template also records every accepted action locally and renders it at once in Underway as `accepted - dispatching` with the ticket id, who is doing it, and the time, so a fresh choice is never invisible while the real row is being set up.
+
+### Live notice and sound
+
+The shipped template watches its own page, re-renders itself when the rebuilt board differs, and shows what changed without a reload.
+A kanban ticket that appears or changes state is announced too, so a matter moving from `doing` to `delivered` reaches the captain without a reload.
+A new report becomes news through the ticket it belongs to: record it as a dated `history` entry on that card, or as a delivered item, because the board has no separate reports surface of its own.
+What counts as already-seen is stored per board path, so the notice survives an F5.
+Sound is off until the captain turns it on with the visible `Sound` button; the chime is generated with Web Audio, needs no external library or audio file, and falls back to the on-screen notice alone when the browser blocks audio.
+Do not promise the captain audio that the browser has not unlocked.
+
 Run `build` once after composing the payload.
 Its serve-first sequence publishes the board, establishes and verifies its Lavish session with `lavish-axi`, reopens an ended session when necessary, and only then binds the answer source and proves a live polling listener; use the session URL it prints in the chat digest.
 Never bind or arm the board before its session is listed open.
@@ -133,6 +182,15 @@ Route the non-decision keys yourself:
 
 - `merge.<task-id>` is the captain's explicit merge order; follow the merge ruling below.
 - `dispatch.charted` carries comma-separated task ids the captain picked to start now; verify each id against the current backlog - still queued, blocker and time gate actually clear - then dispatch through the normal lifecycle, and report any id that no longer qualifies instead of forcing it.
+- `dispatch.<task-id>` is the same order for exactly one task, and the same verification applies; dispatch it, and never ask the captain to confirm the click he just made.
+- `resume.<task-id>` continues stopped work: reconcile the current state first, then resume that worker on its existing record through the normal lifecycle rather than starting a duplicate, and report a task that turns out to have already moved on.
+- `approve.<ticket-id>` is the captain's explicit approval for that one delivered matter and closes it: verify the delivered state, record the approval, complete the matter through the selected delivery path (merging a ready, green PR through `bin/fm-pr-merge.sh`, or finalizing a local delivery), then move its ticket to `closed` on the next rebuild; a red or changed PR is reported, never merged.
+- `grill.<question-number>.<ticket-id>` is one numbered answer: record it against that ticket, keep the answer on the card as history, and when the ticket's questions are all answered proceed on the consolidated answer through the normal authority path.
+
+Every one of these keys arrives as an ordinary `choice` annotation, so the keyed-answer intake reports the ones that name no captain-held task as `skipped:` and feeds the rest itself; read the captured result, act on the skipped keys here, and never re-answer a key the intake already closed.
+The flow a click starts is uniform: the captain clicks, the choice is captured, firstmate orders the work, and the item appears in Underway with its ticket id, who is doing it, what it is doing, and since when.
+Until the real row exists the board shows the click's own `accepted - dispatching` line, so a decided item is never invisible and never has to be asked about again.
+After handling, rebuild the board from a fresh snapshot so a resolved card leaves the working columns and stays in history, and so `tickets` reflect the new states.
 
 After handling, rebuild the board from a fresh snapshot so acted-on items leave Captain's Call, and echo every action taken in chat so the board and chat never diverge silently.
 

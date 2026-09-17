@@ -184,6 +184,77 @@ extract_payload() {  # <board-path>
     | sed '1d;$d'
 }
 
+test_build_validates_the_captain_surfaces() {
+  local home data board out bad
+  home=$(make_home captain-surfaces)
+  data="$home/payload.json"
+  board="$home/.lavish/bearings-board.html"
+
+  # The same payload with every captain surface present is accepted, and the
+  # surfaces survive the round-trip through the built page.
+  write_valid_payload "$data"
+  jq '
+    .advice = [{id:"advice-1", title:"Speed up CI", verdict:"CI is the bottleneck",
+      pros:["cheap to try"], cons:["one flaky lane"], recommendation:"Split the slow lane",
+      effort:"medium", risk:"low"}]
+    | .stalled = [{id:"stopped-1", kind:"dead", name:"Stopped worker", repo:"sample",
+        started:"2026-09-17T13:54:45Z", last_state:"working", why:"the worker process is gone",
+        next:"resume the worker", resumable:true, ticket:"stopped-1", waiting_on:"blocked"},
+      {id:"paused-1", kind:"paused", name:"Paused worker", repo:null, started:null,
+        last_state:"paused", why:"waiting on an upstream release", next:"recheck after the release",
+        resumable:false}]
+    | .delivered = [{ticket:"delivered-1", repo:"sample", what:"Fix the parser",
+        result:"all tests green", delivered_at:"2026-09-17T13:00:00Z",
+        report_url:"https://example.test/report", waiting_on:"captain"}]
+    | .grill = [{ticket:"delivered-1", prompt:"Which runner?", waiting_on:"captain",
+        options:[{value:"a", label:"GitHub"}, {value:"b", label:"Local", hint:"no quota"}]}]
+    | .tickets = [{id:"delivered-1", title:"Fix the parser", state:"delivered", repo:"sample",
+        owner:"agent ship", summary:"handed over, awaiting approval", opened_at:"2026-09-17T12:00:00Z",
+        updated_at:"2026-09-17T13:00:00Z", delivered_at:"2026-09-17T13:00:00Z",
+        result:"all tests green", report_url:"https://example.test/report",
+        history:["12:05 reproduced the bug", "13:00 tests green"],
+        learnings:["the parser assumed LF line endings"],
+        questions:[{prompt:"Ship it?", options:[{value:"a", label:"Yes"}]}]},
+      {id:"done-1", title:"Earlier matter", state:"closed", repo:null}]
+  ' "$data" > "$data.tmp" && mv "$data.tmp" "$data"
+  out=$(run_board "$home" build "$data" 2>&1) || true
+  assert_contains "$out" "board: $board" "a payload with every captain surface was refused: $out"
+  extract_payload "$board" | jq -e '
+    (.advice | length) == 1 and .advice[0].title == "Speed up CI"
+      and (.stalled | length) == 2 and .stalled[0].kind == "dead"
+      and (.delivered | length) == 1 and .delivered[0].ticket == "delivered-1"
+      and (.grill | length) == 1 and (.tickets | length) == 2
+      and .tickets[0].report_url == "https://example.test/report"
+  ' >/dev/null || fail "the captain surfaces did not survive the built board"
+
+  # Each malformed captain surface refuses and names the surface.
+  assert_surface_refused() {  # <jq filter> <expected fragment> <description>
+    write_valid_payload "$data"
+    jq "$1" "$data" > "$data.tmp" && mv "$data.tmp" "$data"
+    set +e
+    out=$(run_board "$home" build "$data" 2>&1)
+    bad=$?
+    set -e
+    [ "$bad" -ne 0 ] || fail "$3 was accepted"
+    assert_contains "$out" "$2" "$3 did not name the offending surface: $out"
+  }
+  assert_surface_refused '.advice=[{"id":"a","title":"T","pros":[],"cons":[],"recommendation":"R"}]' advice "advice without a verdict"
+  assert_surface_refused '.advice=[{"id":"a","title":"T","verdict":"V","pros":"cheap","cons":[],"recommendation":"R"}]' advice "advice with non-list pros"
+  assert_surface_refused '.stalled=[{"id":"s","name":"N","repo":null,"last_state":"working","next":"go"}]' stalled "a stopped row without a reason"
+  assert_surface_refused '.stalled=[{"id":"s","name":"N","repo":null,"kind":"exploded","last_state":"working","why":"w","next":"n"}]' stalled "a stopped row with an unknown kind"
+  assert_surface_refused '.delivered=[{"repo":"sample","what":"W"}]' delivered "a delivered row without a ticket"
+  assert_surface_refused '.delivered=[{"ticket":"d","repo":"sample","what":"W","report_url":"javascript:alert(1)"}]' delivered "a delivered row with a non-HTTPS report link"
+  assert_surface_refused '.grill=[{"ticket":"g","prompt":"Q?","options":[]}]' grill "a question with no options"
+  assert_surface_refused '.tickets=[{"id":"t","title":"T","repo":null,"state":"finished"}]' tickets "a kanban card with an unknown state"
+  assert_surface_refused '.tickets=[{"id":"t","title":"T","repo":null,"state":"captain","questions":[{"prompt":"Q?","options":[{"label":"No value"}]}]}]' tickets "a kanban question whose option has no value"
+  assert_surface_refused '.grill=[{"ticket":"g","prompt":"Q?","options":[{"value":"reconcile","label":"Re-check"}]}]' grill "a question occupying the reserved reconcile value"
+  assert_surface_refused '.tickets=[{"id":"t","title":"T","repo":null,"state":"captain","questions":[{"prompt":"Q?","options":[{"value":"reconcile","label":"Re-check"}]}]}]' tickets "a kanban question occupying the reserved reconcile value"
+  assert_surface_refused '.tickets=[{"id":"t","title":"T","repo":null,"state":"captain","report_url":"javascript:alert(1)"}]' tickets "a kanban card with a non-HTTPS report link"
+  assert_surface_refused '.charted=[{"id":("x"*116),"repo":"sample","title":"T","reason":"","dispatchable":true}]' charted "a charted id too long for a prefixed click key"
+  assert_surface_refused '.grill=[{"ticket":("x"*116),"prompt":"Q?","options":[{"value":"a","label":"A"}]}]' grill "a question ticket too long for a prefixed click key"
+  pass "build validates every captain surface and names the one that fails"
+}
+
 test_path_is_stable_and_home_scoped() {
   local home
   home=$(make_home path)
@@ -795,3 +866,4 @@ test_build_fails_when_reconcile_cannot_establish_a_listener
 test_every_decision_card_carries_the_reconcile_choice
 test_build_refuses_a_payload_that_occupies_the_reconcile_value
 test_build_refuses_a_nondecision_reconcile_value
+test_build_validates_the_captain_surfaces

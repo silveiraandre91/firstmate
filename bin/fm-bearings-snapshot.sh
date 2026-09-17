@@ -73,6 +73,28 @@
 # waste capacity, and --all-landed switches back to the complete global newest-first
 # order. Which closed rows either side contributes is bin/fm-landed-lib.sh's rule.
 #
+# The stalled section names work whose worker is no longer driving it, so a captain
+# surface can offer a way to continue instead of losing the thread. It CONSUMES two
+# signals that already exist rather than detecting anything new: a canonical task
+# row whose endpoint is absent or dead (endpoint.exists == false or
+# endpoint.agent_alive == "dead") or whose current state is `failed`; and an
+# unresolved FAILED terminal outcome receipt under state/terminal-outcomes/ whose
+# format and lifecycle bin/fm-inactive-reconcile.sh owns (a receipt for a completed
+# outcome, or one already presented/reported, is reconciled and never appears).
+# Each row carries the durable task id, a kind of dead/failed. A worker that
+# finished normally is NOT stopped work: a task that reported `done` keeps its
+# meta until teardown while its endpoint window is already gone, so the
+# endpoint-gone branch excludes a row whose state is done or whose last durable
+# status event is `done:`. The receipt branch only ever carries a failed
+# outcome. A live-signal row wins over a receipt for the same id. The section
+# never mutates state and never revives anything.
+#
+# Gate title and reason carry their FULL text. They used to be clipped to 60
+# and 40 characters, and then to a configurable bound; both were still a clipped
+# decision on a captain surface that renders the whole thing. Only whitespace is
+# normalized, so the board and the digest receive the real text and any display
+# bound belongs to the renderer that knows its own width.
+#
 # Flags:
 #   (default)        compact projection with bounded remote-ledger collection, TOON
 #   --json           the same projected model as JSON (machine/debug; parity form)
@@ -112,6 +134,7 @@ FM_BEARINGS_GATES=${FM_BEARINGS_GATES:-20}
 FM_BEARINGS_REPORTS=${FM_BEARINGS_REPORTS:-20}
 FM_BEARINGS_RECORDED_PRS=${FM_BEARINGS_RECORDED_PRS:-20}
 FM_BEARINGS_UNHEALTHY=${FM_BEARINGS_UNHEALTHY:-20}
+FM_BEARINGS_STALLED=${FM_BEARINGS_STALLED:-10}
 FM_BEARINGS_PR_REPOS=${FM_BEARINGS_PR_REPOS:-10}
 FM_BEARINGS_PR_LIMIT=${FM_BEARINGS_PR_LIMIT:-20}
 FM_BEARINGS_PR_TIMEOUT=${FM_BEARINGS_PR_TIMEOUT:-20}
@@ -128,6 +151,7 @@ validate_bound FM_BEARINGS_GATES "$FM_BEARINGS_GATES"
 validate_bound FM_BEARINGS_REPORTS "$FM_BEARINGS_REPORTS"
 validate_bound FM_BEARINGS_RECORDED_PRS "$FM_BEARINGS_RECORDED_PRS"
 validate_bound FM_BEARINGS_UNHEALTHY "$FM_BEARINGS_UNHEALTHY"
+validate_bound FM_BEARINGS_STALLED "$FM_BEARINGS_STALLED"
 validate_bound FM_BEARINGS_PR_REPOS "$FM_BEARINGS_PR_REPOS"
 validate_bound FM_BEARINGS_PR_LIMIT "$FM_BEARINGS_PR_LIMIT"
 
@@ -150,6 +174,7 @@ Default fields: schema, home, generated, prs, in_flight{id,kind,state,repo,name,
   secondmate_reconcile{id,spawn_gen,host,kind,ids},
   decisions_open{id,key,verb,summary,owner}, landed{id,what,artifact,owner},
   gates{id,title,blocked_by,reason,owner,filed}, reports{id,path}, recorded_prs{id,url},
+  stalled{id,kind,name,repo,started,last_state,why,next,resumable},
   unhealthy_endpoints{...} (only when non-empty), omitted{surface,reveal}.
 Default gates are selected newest filed first before their bound; undated gates
   retain input order after dated gates.
@@ -242,6 +267,36 @@ else
 fi
 HOME_LABEL=$(printf '%s' "$SNAP" | jq -er '.fm_home | strings | split("/") | (.[-2:] | join("/"))') \
   || { echo "fm-bearings-snapshot: invalid canonical snapshot" >&2; exit 1; }
+
+# --- unresolved terminal outcomes -------------------------------------------
+# Read the durable receipts bin/fm-inactive-reconcile.sh writes under
+# state/terminal-outcomes/ (that script owns the record schema, phases, and
+# lifecycle). Only an unresolved `.pending` receipt for a FAILED outcome is a
+# continuation row: a `.presented`/`.reported` receipt is already reconciled,
+# and a completed outcome belongs to the landed surface, not here. The read is
+# bounded per receipt and in count, and it never mutates anything.
+TERMINAL_OUTCOME_DIR="${FM_STATE_OVERRIDE:-$FM_HOME/state}/terminal-outcomes"
+STALLED_RECEIPTS='[]'
+if [ -d "$TERMINAL_OUTCOME_DIR" ] && [ ! -L "$TERMINAL_OUTCOME_DIR" ]; then
+  STALLED_RECEIPTS=$(
+    for receipt in "$TERMINAL_OUTCOME_DIR"/*.pending; do
+      [ -f "$receipt" ] && [ ! -L "$receipt" ] || continue
+      head -c 8192 -- "$receipt" 2>/dev/null | awk '
+        { key = $0; sub(/=.*$/, "", key); sub(/^[^=]*=/, "", $0) }
+        key == "task_id"       { task = $0 }
+        key == "state"         { state = $0 }
+        key == "incarnation"   { incarnation = $0 }
+        key == "created_epoch" { created = $0 }
+        key == "origin"        { origin = $0 }
+        END {
+          if (state != "failed" || task == "") exit 0
+          printf "%s\t%s\t%s\t%s\n", task, incarnation, created, origin
+        }'
+    done | head -n "$FM_BEARINGS_STALLED" | jq -R -s '
+      split("\n") | map(select(length > 0))
+      | map(split("\t") | {task_id:.[0], incarnation:(.[1] // ""), created_epoch:(.[2] // ""), origin:(.[3] // "")})'
+  ) || STALLED_RECEIPTS='[]'
+fi
 
 # --- optional live GitHub PR enrichment -------------------------------------
 PR_STATUS='not_requested (run: /bearings include PRs)'
@@ -369,9 +424,13 @@ MODEL=$(printf '%s' "$SNAP" | jq \
   --argjson pr_rows_capped "$PR_ROWS_CAPPED" \
   --argjson pr_rows_min_total "$PR_ROWS_MIN_TOTAL" \
   --argjson return_catchup "$RETURN_CATCHUP" \
+  --argjson stalled_receipts "$STALLED_RECEIPTS" \
+  --argjson stalled_n "$FM_BEARINGS_STALLED" \
   --argjson candidate_prs "$CANDIDATE_PRS" "$FM_LANDED_JQ_DEFS"'
   def trunc($n): if . == null then null else
     (tostring | gsub("\\s+"; " ") | if (length > $n) then (.[:$n] + "…") else . end) end;
+  # Whitespace-normalized full text: no clip, so a gate reaches a renderer whole.
+  def full_text: if . == null then null else (tostring | gsub("\\s+"; " ")) end;
   def fit($n):
     tostring | gsub("\\s+"; " ")
     | if $n <= 0 then ""
@@ -380,6 +439,19 @@ MODEL=$(printf '%s' "$SNAP" | jq \
   def live_captain_call: .hold_bucket == "live";
   def projected_deferred_hold:
     .hold_bucket != null and .hold_bucket != "live";
+  # A spawn generation is a status-ledger token, not a bare epoch: `spawn_gen`
+  # reads like `s1789653285.620114.561`, so the leading kind marker and the
+  # sub-second/token segments are dropped before the epoch is formatted. An
+  # unparseable or absent generation yields null rather than a fabricated time.
+  def generation_epoch($gen):
+    ($gen // "") as $g
+    | if (($g | type) != "string") or $g == "" then null
+      else ($g | sub("^[^0-9]*"; "") | split(".")[0]) as $digits
+      | if ($digits | test("^[0-9]+$")) then ($digits | tonumber) else null end
+      end;
+  def start_stamp($gen):
+    generation_epoch($gen) as $epoch
+    | if $epoch == null then null else ($epoch | todateiso8601) end;
   def bounded_blocker_note($n):
     ((.unresolved_blocker_ids // []) | map(tostring)) as $ids
     | reduce range(0; $ids | length) as $i
@@ -417,9 +489,9 @@ MODEL=$(printf '%s' "$SNAP" | jq \
         end
       end;
   def as_gate($owner):
-    {id, title:(.title | trunc(60)),
+    {id, title:(.title | full_text),
      blocked_by:((.unresolved_blocker_ids // []) | if length > 0 then join(",") else "-" end | trunc(120)),
-     reason:(hold_gate_reason | trunc(40)), owner:$owner,
+     reason:(hold_gate_reason | full_text), owner:$owner,
      filed:((.since // null) | trunc(40))};
   def round_robin_landed($n):
     . as $groups
@@ -454,6 +526,44 @@ MODEL=$(printf '%s' "$SNAP" | jq \
      + [ (.secondmate_current.records // [])[] as $m | $m.endpoints[]?
          | select(.endpoint.exists == false or .endpoint.agent_alive == "dead")
          | {id:($m.id + "/" + .id),backend:"secondmate-home",target:(.endpoint.target // "-"),exists:.endpoint.exists,agent:.endpoint.agent_alive} ]) as $unhealthy_all
+  # Work whose worker is no longer driving it. Built only from the signals the
+  # canonical snapshot and the inactive-outcome receipts already carry; a row
+  # here is a continuation pointer, never a live-work claim.
+  | [ .tasks[]
+      | select(.kind != "secondmate")
+      | (.hints.last_event_text // "") as $last_event
+      | select(
+          (((.endpoint.exists == false or .endpoint.agent_alive == "dead")
+            and .current_state.state != "done"
+            and (($last_event | test("^[[:space:]]*done[[:space:]]*:")) | not))
+           or .current_state.state == "failed"))
+      | (.endpoint.exists == false or .endpoint.agent_alive == "dead") as $endpoint_gone
+      | { id,
+          kind:(if $endpoint_gone then "dead" else "failed" end),
+          name:((.backlog.title // "") as $name
+                | (if ($name | type) == "string" and ($name | test("[^[:space:]]")) then $name else .id end) | trunc(70)),
+          repo:(.backlog.repo // .project // null),
+          started:start_stamp(.spawn_gen),
+          last_state:(.current_state.state // "unknown"),
+          why:((if (.current_state.detail // "") != "" then .current_state.detail
+                elif $endpoint_gone and .endpoint.exists == false then "the worker endpoint record is gone"
+                elif $endpoint_gone then "the worker process is no longer running"
+                elif (.hints.last_event_text // "") != "" then .hints.last_event_text
+                else "the worker stopped without reporting an outcome" end) | trunc(240)),
+          next:(if $endpoint_gone then "resume the worker on its existing worktree"
+                else "inspect what failed, then re-run the task" end),
+          resumable:true } ] as $stalled_live
+  | ([ $stalled_receipts[]
+       | { id:.task_id,
+           kind:"failed",
+           name:.task_id,
+           repo:null,
+           started:start_stamp(.incarnation),
+           last_state:"failed",
+           why:"the worker ended without delivering an approved outcome",
+           next:"review the recorded outcome, then decide the follow-up",
+           resumable:false } ]) as $stalled_receipt_rows
+  | ($stalled_live + [ $stalled_receipt_rows[] | select(.id as $id | [$stalled_live[].id] | index($id) | not) ]) as $stalled_all
   | ([ (.secondmate_current.records // [])[]
        | ([.decisions_open[]? | select(.source == "backlog" and .verb == "captain-hold"
             and live_captain_call)]) as $captain_holds
@@ -636,7 +746,8 @@ MODEL=$(printf '%s' "$SNAP" | jq \
               + ($gates_all | newest_filed_first
                  | if $all_queued == 1 then . else .[:$gates_n] end)),
       reports: (if $all_reports == 1 then $reports_all else $reports_all[:$reports_n] end),
-      recorded_prs: (if $all_recorded_prs == 1 then $recorded_prs_all else $recorded_prs_all[:$recorded_prs_n] end)
+      recorded_prs: (if $all_recorded_prs == 1 then $recorded_prs_all else $recorded_prs_all[:$recorded_prs_n] end),
+      stalled: ($stalled_all[:$stalled_n])
     }
   | . + (if ($unhealthy_all | length) > 0 then
            {unhealthy_endpoints:(if $all_unhealthy == 1 then $unhealthy_all else $unhealthy_all[:$unhealthy_n] end)}
@@ -680,6 +791,7 @@ MODEL=$(printf '%s' "$SNAP" | jq \
         (if $all_reports == 0 and ($reports_all | length) > $reports_n then {surface:("reports showing \($reports_n) of \($reports_all | length)"), reveal:"--all-reports"} else empty end),
         (if $all_recorded_prs == 0 and ($recorded_prs_all | length) > $recorded_prs_n then {surface:("recorded_prs showing \($recorded_prs_n) of \($recorded_prs_all | length)"), reveal:"--all-recorded-prs"} else empty end),
         (if $all_unhealthy == 0 and ($unhealthy_all | length) > $unhealthy_n then {surface:("unhealthy_endpoints showing \($unhealthy_n) of \($unhealthy_all | length)"), reveal:"--all-unhealthy"} else empty end),
+        (if ($stalled_all | length) > $stalled_n then {surface:("stalled showing \($stalled_n) of \($stalled_all | length)"), reveal:"raise FM_BEARINGS_STALLED"} else empty end),
         (if $include_prs == 1 and $pr_repos_total > $pr_repos_shown then {surface:("PR repositories showing \($pr_repos_shown) of \($pr_repos_total)"), reveal:"--all-pr-repos"} else empty end),
         (if $include_prs == 1 and $pr_rows_capped > 0 then {surface:("candidate_prs showing \($candidate_prs | length) of at least \($pr_rows_min_total); capped in \($pr_rows_capped) repo(s)"), reveal:"raise FM_BEARINGS_PR_LIMIT"} else empty end),
         (if $include_prs == 1 then empty else {surface:"live PR discovery + checks", reveal:"--include-prs"} end) ]) }

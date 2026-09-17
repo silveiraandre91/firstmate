@@ -51,6 +51,10 @@
 }
 
 * { box-sizing: border-box; }
+/* The `hidden` attribute must win over an author display rule. Several sections
+   and the live notice set `display: flex`, which otherwise overrides the UA
+   `[hidden] { display: none }` and leaves empty surfaces visible on every load. */
+[hidden] { display: none !important; }
 html, body { margin: 0; padding: 0; }
 body {
   font-family: var(--font-sans);
@@ -236,15 +240,19 @@ a { color: inherit; text-decoration: none; }
 /* ---- compact rows (Underway / Landed / Charted) ---- */
 .bb-rows { display: flex; flex-direction: column; }
 .bb-row {
-  display: flex; align-items: center; gap: 12px; padding: 11px 18px;
+  display: flex; align-items: flex-start; gap: 12px; padding: 11px 18px;
   border-top: 1px solid var(--border-soft); min-width: 0;
 }
 .bb-row:first-child { border-top: none; }
 .bb-row__main { min-width: 0; flex: 1 1 auto; }
-.bb-row__title { font-size: var(--fs-sm); font-weight: 700; color: var(--text-strong); line-height: 1.3;
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.bb-row__sub { font-size: var(--fs-xs); color: var(--text-muted); line-height: 1.3; margin-top: 1px;
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* Title and sub-line wrap by default. A captain reads these to decide, so no
+   clipping, no ellipsis, and no line clamp: a long title or reason grows the row
+   instead of disappearing. `overflow-wrap: anywhere` also breaks a long
+   unbroken token rather than overflowing the card. */
+.bb-row__title { font-size: var(--fs-sm); font-weight: 700; color: var(--text-strong); line-height: 1.35;
+  white-space: normal; overflow-wrap: anywhere; word-break: break-word; }
+.bb-row__sub { font-size: var(--fs-xs); color: var(--text-muted); line-height: 1.4; margin-top: 2px;
+  white-space: normal; overflow-wrap: anywhere; word-break: break-word; }
 .bb-row__id { font-family: var(--font-mono); font-size: var(--fs-2xs); color: var(--text-faint); white-space: nowrap; }
 .bb-row__pr { font-family: var(--font-mono); font-size: var(--fs-xs); font-weight: 600; color: var(--ocean-600); white-space: nowrap; }
 .bb-row__pr:hover { text-decoration: underline; }
@@ -272,8 +280,102 @@ a { color: inherit; text-decoration: none; }
 
 .bb-foot { display: flex; justify-content: flex-end; border-top: 1px solid var(--border-default); padding-top: 14px; }
 
+/* ---- captain-critical chips: ticket id and who waits for whom ---- */
+.bb-chips { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-top: 6px; }
+.bb-decision__tags, .bb-advice__tags { display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-left: auto; }
+.bb-ticket {
+  font-family: var(--font-mono); font-size: var(--fs-2xs); font-weight: 600;
+  color: var(--ink-700); background: var(--paper-200); border: 1px solid var(--cream-line);
+  border-radius: var(--radius-xs); padding: 3px 7px 2px; white-space: nowrap;
+}
+.bb-wait {
+  font-family: var(--font-mono); font-size: var(--fs-2xs); font-weight: 700; text-transform: uppercase;
+  letter-spacing: 0.06em; border-radius: var(--radius-xs); padding: 4px 8px 3px; white-space: nowrap;
+  border: 1px solid var(--border-default); background: var(--paper-000); color: var(--text-muted);
+}
+.bb-wait--captain, .bb-wait--delivered { background: var(--rust-050); border-color: var(--rust-300); color: var(--rust-700); }
+.bb-wait--fleet { background: var(--ocean-050); border-color: var(--ocean-200); color: var(--ocean-600); }
+.bb-wait--blocked { background: var(--status-warn-soft); border-color: var(--gold-300); color: var(--status-warn); }
+
+/* ---- delivered: awaiting the captain's approval ---- */
+.bb-approve-wrap {
+  display: flex; align-items: center; gap: 8px; flex: none;
+  background: var(--status-warn-soft); border: 1.5px solid var(--gold-300);
+  border-radius: var(--radius-sm); padding: 7px 10px 6px; cursor: pointer;
+}
+.bb-approve { accent-color: var(--rust-500); width: 18px; height: 18px; margin: 0; cursor: pointer; flex: none; }
+.bb-approve-wrap__label { font-size: var(--fs-2xs); font-weight: 800; text-transform: uppercase; letter-spacing: 0.07em; color: var(--navy-700); white-space: nowrap; }
+.bb-row.is-approved { background: var(--sea-050); }
+.bb-delivered__link { font-family: var(--font-mono); font-size: var(--fs-xs); color: var(--ocean-600); font-weight: 600; white-space: normal; overflow-wrap: anywhere; }
+
+/* ---- My Take: the firstmate's own critique ---- */
+.bb-advice { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 14px; }
+.bb-advice__card { display: flex; flex-direction: column; gap: 10px; padding: 16px 18px; }
+.bb-advice__top { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+.bb-advice__title { margin: 0; font-size: var(--fs-h4); font-weight: 800; color: var(--text-strong); line-height: 1.25; }
+.bb-advice__verdict { margin: 0; font-size: var(--fs-sm); color: var(--text-strong); line-height: 1.45; }
+.bb-advice__grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.bb-advice__head { font-family: var(--font-mono); font-size: var(--fs-2xs); text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-faint); margin-bottom: 4px; }
+.bb-advice__list { margin: 0; padding-left: 16px; }
+.bb-advice__list li { font-size: var(--fs-xs); line-height: 1.5; color: var(--text-body); }
+.bb-advice__rec { font-size: var(--fs-sm); line-height: 1.5; border-left: 3px solid var(--rust-500); padding-left: 10px; color: var(--text-strong); }
+
+/* ---- Adrift: stopped work with a way to continue ---- */
+.bb-stall__why { font-size: var(--fs-xs); color: var(--text-muted); line-height: 1.45; margin-top: 4px; }
+.bb-stall__next { font-size: var(--fs-xs); color: var(--text-strong); line-height: 1.45; margin-top: 4px; }
+.bb-stall__next b { font-family: var(--font-mono); font-size: var(--fs-2xs); text-transform: uppercase; letter-spacing: 0.07em; color: var(--rust-600); margin-right: 6px; }
+
+/* ---- Questions (grill) ---- */
+.bb-grill { display: flex; flex-direction: column; gap: 12px; }
+.bb-grill__card { padding: 16px 18px; display: flex; flex-direction: column; gap: 12px; }
+.bb-grill__head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.bb-grill__num { font-family: var(--font-mono); font-size: var(--fs-xs); font-weight: 800; color: var(--rust-700); background: var(--rust-050); border: 1.5px solid var(--rust-300); border-radius: var(--radius-xs); padding: 4px 8px 3px; }
+.bb-grill__prompt { margin: 0; font-size: var(--fs-h4); font-weight: 800; color: var(--text-strong); line-height: 1.3; white-space: normal; overflow-wrap: anywhere; }
+
+/* ---- live update + sound ---- */
+.bb-nav__tools { display: flex; align-items: center; gap: 10px; }
+.bb-soundbtn {
+  font-family: var(--font-sans); font-size: var(--fs-xs); font-weight: 800; cursor: pointer;
+  background: var(--surface-card); color: var(--text-strong); border: 1.5px solid var(--ink-900);
+  border-radius: var(--radius-banner); box-shadow: var(--shadow-hard-sm); padding: 7px 12px 6px;
+}
+.bb-soundbtn[aria-pressed="true"] { background: var(--gold-500); color: var(--navy-700); }
+.bb-soundbtn:focus-visible { outline: none; box-shadow: var(--focus-ring); }
+.bb-live {
+  border: 2px solid var(--ink-900); border-radius: var(--radius-md); background: var(--gold-100);
+  box-shadow: var(--shadow-hard-sm); padding: 14px 16px; display: flex; flex-direction: column; gap: 8px;
+}
+.bb-live__head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.bb-live__title { font-size: var(--fs-h4); font-weight: 800; color: var(--text-strong); }
+.bb-live__dismiss { cursor: pointer; background: transparent; border: none; font-size: var(--fs-h4); line-height: 1; color: var(--text-muted); padding: 0 4px; }
+.bb-live__list { margin: 0; padding-left: 18px; }
+.bb-live__list li { font-size: var(--fs-sm); line-height: 1.5; }
+.bb-live__hint { font-size: var(--fs-2xs); color: var(--text-muted); font-family: var(--font-mono); }
+
+/* ---- Kanban: one column per state, one card per captain matter ---- */
+.bb-kanban { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px; align-items: start; }
+.bb-col { background: var(--surface-card-warm); border: 1px solid var(--border-soft); border-radius: var(--radius-md); padding: 10px; display: flex; flex-direction: column; gap: 10px; }
+.bb-col__head { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-family: var(--font-mono); font-size: var(--fs-2xs); text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-muted); border-bottom: 1px solid var(--border-soft); padding-bottom: 6px; }
+.bb-col__count { font-weight: 800; color: var(--text-strong); }
+.bb-col__empty { font-size: var(--fs-xs); color: var(--text-faint); padding: 2px; }
+.bb-card { background: var(--surface-card); border: 1px solid var(--border-default); border-radius: var(--radius-sm); box-shadow: var(--shadow-sm); padding: 10px 12px; display: flex; flex-direction: column; gap: 6px; }
+.bb-card__top { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.bb-card__title { font-size: var(--fs-sm); font-weight: 700; color: var(--text-strong); line-height: 1.3; white-space: normal; overflow-wrap: anywhere; }
+.bb-card__meta { font-family: var(--font-mono); font-size: var(--fs-2xs); color: var(--text-faint); line-height: 1.5; }
+.bb-card__summary { font-size: var(--fs-xs); color: var(--text-muted); line-height: 1.45; }
+.bb-card__head { font-family: var(--font-mono); font-size: var(--fs-2xs); text-transform: uppercase; letter-spacing: 0.07em; color: var(--text-faint); margin-top: 4px; }
+.bb-card__list { margin: 0; padding-left: 16px; }
+.bb-card__list li { font-size: var(--fs-xs); line-height: 1.5; color: var(--text-body); }
+.bb-card__learnings li { color: var(--sea-700); }
+.bb-card form { display: flex; flex-direction: column; gap: 8px; }
+.bb-card--history { background: var(--paper-000); box-shadow: none; }
+.bb-col--history { background: var(--paper-200); }
+.bb-col--history .bb-card__title { font-weight: 600; color: var(--text-muted); }
+.bb-card .bb-approve-wrap { align-self: flex-start; }
+
 @media (max-width: 900px) {
   .bb-cols { grid-template-columns: 1fr; }
+  .bb-advice__grid { grid-template-columns: 1fr; }
 }
 </style>
 </head>
@@ -289,10 +391,26 @@ a { color: inherit; text-decoration: none; }
       </span>
       <span class="bb-brand__wm">bearings</span>
     </span>
+    <span class="bb-nav__tools">
+      <button type="button" class="bb-soundbtn" id="bb-sound" aria-pressed="false"
+        title="Alerts when the board changes while you have it open">&#128277; Sound: off</button>
+    </span>
   </div>
 </header>
 
 <main class="bb-main">
+
+  <!-- Live notice. Hidden until the watcher sees the rebuilt board differ from
+       what this page already shows; it survives an F5 because the seen state is
+       stored per board path, not only in memory. -->
+  <div class="bb-live" id="bb-live" hidden role="status" aria-live="polite">
+    <div class="bb-live__head">
+      <span class="bb-live__title" id="bb-live-title">Board updated</span>
+      <button type="button" class="bb-live__dismiss" id="bb-live-dismiss" aria-label="Dismiss">&#215;</button>
+    </div>
+    <ul class="bb-live__list" id="bb-live-list"></ul>
+    <span class="bb-live__hint" id="bb-live-hint"></span>
+  </div>
 
   <div class="bb-stats" id="bb-stats"></div>
 
@@ -342,6 +460,69 @@ a { color: inherit; text-decoration: none; }
     </div>
   </section>
   </div>
+
+  <!-- Kanban: the captain's own list. One column per state, one card per
+       matter, and a delivered card never leaves until the captain clicks. -->
+  <section class="bb-section" id="bb-kanban-section" hidden>
+    <div class="bb-section__head">
+      <span class="fm-sign fm-sign--eyebrow">
+        <svg class="fm-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 3v18"/><path d="M15 3v18"/></svg>
+        Kanban
+      </span>
+      <span class="fm-sign fm-sign--muted" id="bb-kanban-sub"></span>
+    </div>
+    <div class="bb-kanban" id="bb-kanban"></div>
+  </section>
+
+  <!-- Questions: numbered asks with options. An answer arrives over the same
+       annotation channel as every other card, keyed grill.<n>.<ticket-id>. -->
+  <section class="bb-section" id="bb-grill-section" hidden>
+    <div class="bb-section__head">
+      <span class="fm-sign fm-sign--eyebrow">
+        <svg class="fm-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><path d="M12 17h.01"/><circle cx="12" cy="12" r="10"/></svg>
+        Questions
+      </span>
+      <span class="fm-sign fm-sign--muted" id="bb-grill-sub"></span>
+    </div>
+    <div class="bb-grill" id="bb-grill"></div>
+  </section>
+
+  <!-- Delivered: work handed over but NOT approved. It never appears as
+       concluded; the checkbox click is the captain's approval order. -->
+  <section class="bb-section" id="bb-delivered-section" hidden>
+    <div class="bb-section__head">
+      <span class="fm-sign fm-sign--eyebrow">
+        <svg class="fm-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="m3.3 7 8.7 5 8.7-5"/><path d="M12 22V12"/></svg>
+        Delivered - awaiting you
+      </span>
+      <span class="fm-sign fm-sign--muted" id="bb-delivered-sub"></span>
+    </div>
+    <div class="fm-card fm-card--warm"><div class="bb-rows" id="bb-delivered"></div></div>
+  </section>
+
+  <!-- My Take: the firstmate's own critical read, pros/cons, and ideas. -->
+  <section class="bb-section" id="bb-advice-section" hidden>
+    <div class="bb-section__head">
+      <span class="fm-sign fm-sign--eyebrow">
+        <svg class="fm-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v3"/><path d="M5.6 5.6l2.1 2.1"/><path d="M3 12h3"/><path d="M18 12h3"/><path d="M16.3 7.7l2.1-2.1"/><path d="M12 14a6 6 0 0 0 6-6"/><path d="M12 22a4 4 0 0 1-4-4h8a4 4 0 0 1-4 4Z"/></svg>
+        My Take
+      </span>
+      <span class="fm-sign fm-sign--muted" id="bb-advice-sub"></span>
+    </div>
+    <div class="bb-advice" id="bb-advice"></div>
+  </section>
+
+  <!-- Adrift: a worker stopped, and here is how the work continues. -->
+  <section class="bb-section" id="bb-stalled-section" hidden>
+    <div class="bb-section__head">
+      <span class="fm-sign fm-sign--eyebrow">
+        <svg class="fm-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22V8"/><path d="M5 12H2a10 10 0 0 0 20 0h-3"/><path d="M9 8h6"/><circle cx="12" cy="4" r="2"/></svg>
+        Adrift
+      </span>
+      <span class="fm-sign fm-sign--muted" id="bb-stalled-sub"></span>
+    </div>
+    <div class="fm-card fm-card--poster"><div class="bb-rows" id="bb-stalled"></div></div>
+  </section>
 
   <div class="bb-cols">
     <section class="bb-section">
@@ -427,14 +608,31 @@ __FM_BEARINGS_BOARD_DATA__
     return;
   }
 
-  try {
+  /* Shared node/chip helpers live at the IIFE scope so both the renderer and the
+     live-update watcher use one implementation. */
   function el(tag, cls, text) {
     var n = document.createElement(tag);
     if (cls) n.className = cls;
     if (text != null) n.textContent = text;
     return n;
   }
+  function clear(node) { if (node) node.innerHTML = ""; }
   function badge(tone, text) { return el("span", "fm-badge fm-badge--" + tone, text); }
+  function ticketChip(id) { return el("span", "bb-ticket", "#" + id); }
+  function waitingLabel(state) {
+    if (state === "captain" || state === "delivered") return "awaiting you";
+    if (state === "blocked") return "blocked";
+    return "running";
+  }
+  function waitingChip(state) { return el("span", "bb-wait bb-wait--" + (state || "fleet"), waitingLabel(state)); }
+
+  /* Ticket ids already rendered from the payload, so a board-accepted item is
+     not shown twice once its real row appears. */
+  var renderedTickets = {};
+
+  /* renderBoard is re-entrant: the live watcher calls it again with a fresh
+     payload so the captain never has to reload the page. */
+  function renderBoard(data) {
   /* Warnings ride the charted feed for layout only; they are alarms, not work,
      so every count of queued work excludes them. */
   function isWarning(t) { return t && t.kind === "warning"; }
@@ -454,6 +652,36 @@ __FM_BEARINGS_BOARD_DATA__
   var chartedMoreWarnings = data.charted_warning_more || 0;
   function utf8ByteLength(text) { return new TextEncoder().encode(text).length; }
   var CHECK_SVG = '<svg class="fm-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>';
+
+  /* The four optional captain surfaces default to empty so a payload composed
+     before they existed renders exactly as it always did. */
+  data.advice = data.advice || [];
+  data.stalled = data.stalled || [];
+  data.delivered = data.delivered || [];
+  data.grill = data.grill || [];
+  data.tickets = data.tickets || [];
+  /* The kanban is the richer per-ticket surface; when it is present it owns the
+     delivered and question cards, so those standalone sections stay hidden. */
+  var kanbanMode = data.tickets.length > 0;
+  renderedTickets = {};
+
+  /* Re-render from scratch so a live update applies a fresh payload in place. */
+  ["bb-stats", "bb-call", "bb-underway", "bb-landed", "bb-charted",
+   "bb-advice", "bb-stalled", "bb-delivered", "bb-grill", "bb-kanban"].forEach(function (id) {
+    clear(document.getElementById(id));
+  });
+  var callStack = document.getElementById("bb-call");
+  if (callStack) { callStack.className = "bb-call"; callStack.hidden = false; }
+  var dispatchBar = document.getElementById("bb-dispatch");
+  if (dispatchBar) dispatchBar.hidden = true;
+  /* Every optional section starts hidden each render: an earlier payload's
+     section must not survive an empty one, or a live re-render leaves a header
+     with no rows behind. */
+  ["bb-grill-section", "bb-delivered-section", "bb-advice-section",
+   "bb-stalled-section", "bb-kanban-section"].forEach(function (id) {
+    var section = document.getElementById(id);
+    if (section) section.hidden = true;
+  });
 
   document.getElementById("bb-provenance").textContent = data.schema + " · " + data.generated;
 
@@ -499,6 +727,11 @@ __FM_BEARINGS_BOARD_DATA__
     pad.appendChild(top);
 
     pad.appendChild(el("h3", "bb-decision__title", item.title));
+    /* the ticket id and who is waiting on whom, visible on the card itself */
+    var callTags = el("span", "bb-decision__tags");
+    callTags.appendChild(ticketChip(item.ticket || item.key));
+    callTags.appendChild(waitingChip(item.waiting_on || "captain"));
+    pad.appendChild(callTags);
 
     if (item.type === "merge") {
       if (item.detail) pad.appendChild(el("p", "bb-decision__detail", item.detail));
@@ -583,6 +816,7 @@ __FM_BEARINGS_BOARD_DATA__
         );
       }
       card.classList.add("is-queued");
+      markAccepted({ ticket: item.ticket || item.key, what: item.title, action: "answer" });
       /* deal the next card once this one is answered */
       setTimeout(function () { showCard(active < cards.length - 1 ? active + 1 : active); }, 450);
     });
@@ -612,8 +846,11 @@ __FM_BEARINGS_BOARD_DATA__
     deck.classList.toggle("bb-call--last", active === cards.length - 1);
   }
   if (cards.length) {
-    stackPrev.addEventListener("click", function () { showCard(active - 1); });
-    stackNext.addEventListener("click", function () { showCard(active + 1); });
+    /* onclick, not addEventListener: renderBoard re-runs on every live rebuild
+       and these nodes persist, so a fresh listener each pass would stack. */
+    stackPrev.onclick = function () { showCard(active - 1); };
+    stackNext.onclick = function () { showCard(active + 1); };
+    stackNav.hidden = false;
     showCard(0);
   } else {
     deck.classList.add("bb-call--empty");
@@ -635,6 +872,10 @@ __FM_BEARINGS_BOARD_DATA__
        no repo is known */
     main.appendChild(el("div", "bb-row__sub",
       t.doing + " · " + t.kind + " · " + (t.repo || t.id)));
+    var uwChips = el("div", "bb-chips");
+    uwChips.appendChild(ticketChip(t.ticket || t.id));
+    uwChips.appendChild(waitingChip(t.waiting_on || "fleet"));
+    main.appendChild(uwChips);
     row.appendChild(main);
     uw.appendChild(row);
   });
@@ -650,6 +891,9 @@ __FM_BEARINGS_BOARD_DATA__
     var main = el("div", "bb-row__main");
     main.appendChild(el("div", "bb-row__title", t.what));
     main.appendChild(el("div", "bb-row__sub", (t.repo || t.id) + " · " + t.owner));
+    var landedChips = el("div", "bb-chips");
+    landedChips.appendChild(ticketChip(t.ticket || t.id));
+    main.appendChild(landedChips);
     row.appendChild(main);
     if (t.pr_url) {
       var a = el("a", "bb-row__pr", "#" + t.pr_url.split("/").pop());
@@ -699,10 +943,38 @@ __FM_BEARINGS_BOARD_DATA__
     }
     var main = el("div", "bb-row__main");
     main.appendChild(el("div", "bb-row__title", t.title));
-    /* second line keeps the title uncrowded in the half-width column */
+    /* The reason is the decision text the captain reads: it wraps in full and is
+       never clipped, so a long reason stays readable. */
     var chSub = t.repo || t.id;
     main.appendChild(el("div", "bb-row__sub", t.reason ? t.reason + " · " + chSub : chSub));
+    var chChips = el("div", "bb-chips");
+    chChips.appendChild(ticketChip(t.ticket || t.id));
+    chChips.appendChild(waitingChip(t.waiting_on || (isWarning(t) ? "blocked" : "fleet")));
+    main.appendChild(chChips);
     row.appendChild(main);
+    if (t.dispatchable && !isWarning(t)) {
+      /* One click is a dispatch ORDER: it queues the same choice annotation the
+         batch picker uses, keyed to this exact task id. */
+      var nowBtn = el("button", "fm-btn fm-btn--sm fm-btn--gold bb-now", "Dispatch now");
+      nowBtn.type = "button";
+      nowBtn.setAttribute("aria-label", "Dispatch " + t.id + " now");
+      nowBtn.addEventListener("click", function () {
+        if (window.lavish && window.lavish.queuePrompt) {
+          window.lavish.queuePrompt(
+            "Dispatch order - start this queued work now: " + t.id,
+            { tag: "choice", text: "Dispatch now: " + t.id, element: nowBtn,
+              queueKey: "dispatch." + t.id,
+              data: { schema: "fm-bearings-answer.v1", question: "dispatch." + t.id,
+                      selection: "dispatch", note: "" } }
+          );
+        }
+        row.classList.add("is-queued");
+        nowBtn.disabled = true;
+        nowBtn.textContent = "queued";
+        markAccepted({ ticket: t.id, what: t.title, action: "dispatch" });
+      });
+      row.appendChild(nowBtn);
+    }
     if (isWarning(t)) row.appendChild(badge("danger", "needs repair"));
     else if (t.reason) row.appendChild(badge("warn", "waiting"));
     ch.appendChild(row);
@@ -721,7 +993,8 @@ __FM_BEARINGS_BOARD_DATA__
   if (anyPickable) {
     bar.hidden = false;
     refreshBar();
-    barBtn.addEventListener("click", function () {
+    /* onclick, not addEventListener: this node persists across re-renders. */
+    barBtn.onclick = function () {
       var ids = pickedIds();
       var dispatchAnswer = ids.join(",");
       if (!ids.length) return;
@@ -738,11 +1011,662 @@ __FM_BEARINGS_BOARD_DATA__
         );
       }
       bar.classList.add("is-queued");
+      ids.forEach(function (id) { markAccepted({ ticket: id, what: id, action: "dispatch" }); });
+    };
+  }
+
+  /* ---- Questions (grill): numbered asks answered over the same channel ---- */
+  var grillWrap = document.getElementById("bb-grill");
+  if (!kanbanMode && data.grill.length) {
+    document.getElementById("bb-grill-section").hidden = false;
+    document.getElementById("bb-grill-sub").textContent =
+      data.grill.length + " question" + (data.grill.length === 1 ? "" : "s");
+    data.grill.forEach(function (q, qi) {
+      var card = el("div", "fm-card bb-grill__card");
+      var head = el("div", "bb-grill__head");
+      head.appendChild(el("span", "bb-grill__num", "G" + (qi + 1)));
+      head.appendChild(ticketChip(q.ticket));
+      head.appendChild(waitingChip(q.waiting_on || "captain"));
+      card.appendChild(head);
+      card.appendChild(el("h3", "bb-grill__prompt", q.prompt));
+
+      /* The key is fixed and unambiguous: grill.<question-number>.<ticket-id>.
+         It rides the same annotation channel, and firstmate maps it back to the
+         ticket by that prefix. */
+      var key = "grill." + (qi + 1) + "." + q.ticket;
+      var form = document.createElement("form");
+      form.setAttribute("data-lavish-question", key);
+      var opts = el("div", "bb-opts");
+      q.options.forEach(function (o, oi) {
+        var lab = el("label", "bb-opt");
+        var input = document.createElement("input");
+        input.type = "radio"; input.name = "answer"; input.value = o.value;
+        lab.appendChild(input);
+        var body = el("span", "bb-opt__body");
+        body.appendChild(el("span", "bb-opt__label", "(" + String.fromCharCode(97 + oi) + ") " + o.label));
+        if (o.hint) body.appendChild(el("span", "bb-opt__hint", o.hint));
+        lab.appendChild(body);
+        if (q.recommend_value && o.value === q.recommend_value) lab.appendChild(el("span", "bb-opt__rec", "rec"));
+        opts.appendChild(lab);
+      });
+      form.appendChild(opts);
+      if (q.allow_freeform) {
+        var gff = document.createElement("input");
+        gff.type = "text"; gff.name = "note"; gff.className = "bb-freeform";
+        gff.placeholder = "or answer in your own words…";
+        form.appendChild(gff);
+      }
+      var gfoot = el("div", "bb-decision__foot");
+      var gbtn = el("button", "fm-btn fm-btn--sm fm-btn--primary", "Queue answer");
+      gbtn.type = "submit";
+      gfoot.appendChild(gbtn);
+      var gq = el("span", "bb-queued");
+      gq.innerHTML = CHECK_SVG + " queued";
+      gfoot.appendChild(gq);
+      var glimit = el("span", "bb-limit");
+      glimit.setAttribute("role", "alert");
+      gfoot.appendChild(glimit);
+      form.appendChild(gfoot);
+      form.addEventListener("submit", function (ev) {
+        ev.preventDefault();
+        var fd = new FormData(form);
+        var value = fd.get("answer");
+        var note = (fd.get("note") || "").trim();
+        var display = value ? (note ? value + " - " + note : value) : note;
+        if (!display) return;
+        if (utf8ByteLength(display) > 512) {
+          glimit.textContent = "Answer is too long to queue (512 bytes maximum).";
+          glimit.classList.add("is-visible");
+          return;
+        }
+        if (window.lavish && window.lavish.queuePrompt) {
+          window.lavish.queuePrompt(
+            "Question G" + (qi + 1) + " (" + q.ticket + "): " + display,
+            { tag: "choice", text: "G" + (qi + 1) + " " + q.ticket + ": " + display, element: form,
+              queueKey: key,
+              data: { schema: "fm-bearings-answer.v1", question: key, selection: value || "", note: note } }
+          );
+        }
+        card.classList.add("is-queued");
+        markAccepted({ ticket: q.ticket, what: q.prompt, action: "answer" });
+      });
+      card.appendChild(form);
+      grillWrap.appendChild(card);
     });
   }
+
+  /* ---- Adrift: stopped work, with how it continues ---- */
+  var stalledWrap = document.getElementById("bb-stalled");
+  if (data.stalled.length) {
+    document.getElementById("bb-stalled-section").hidden = false;
+    document.getElementById("bb-stalled-sub").textContent =
+      data.stalled.length + " stopped worker" + (data.stalled.length === 1 ? "" : "s");
+    data.stalled.forEach(function (s) {
+      var kind = s.kind || "dead";
+      var row = el("div", "bb-row");
+      row.appendChild(badge(kind === "paused" ? "warn" : "danger", kind));
+      var main = el("div", "bb-row__main");
+      main.appendChild(el("div", "bb-row__title", s.name));
+      var bits = ["last state: " + s.last_state];
+      if (s.started) bits.push("started " + s.started);
+      bits.push(s.repo || s.id);
+      main.appendChild(el("div", "bb-row__sub", bits.join(" · ")));
+      var schips = el("div", "bb-chips");
+      schips.appendChild(ticketChip(s.ticket || s.id));
+      schips.appendChild(waitingChip(s.waiting_on || "blocked"));
+      main.appendChild(schips);
+      main.appendChild(el("div", "bb-stall__why", "Why it stopped: " + (s.why || "-")));
+      var nx = el("div", "bb-stall__next");
+      nx.appendChild(el("b", null, "next"));
+      nx.appendChild(el("span", null, s.next || "resume the work on its existing copy"));
+      main.appendChild(nx);
+      row.appendChild(main);
+      if (s.resumable !== false) {
+        var rBtn = el("button", "fm-btn fm-btn--sm fm-btn--primary bb-resume", "Resume");
+        rBtn.type = "button";
+        rBtn.setAttribute("aria-label", "Resume " + s.id);
+        rBtn.addEventListener("click", function () {
+          if (window.lavish && window.lavish.queuePrompt) {
+            window.lavish.queuePrompt(
+              "Resume order - continue this stopped work: " + s.id,
+              { tag: "choice", text: "Resume now: " + s.id, element: rBtn, queueKey: "resume." + s.id,
+                data: { schema: "fm-bearings-answer.v1", question: "resume." + s.id,
+                        selection: "resume", note: "" } }
+            );
+          }
+          row.classList.add("is-queued");
+          rBtn.disabled = true;
+          rBtn.textContent = "queued";
+          markAccepted({ ticket: s.id, what: s.name, action: "resume" });
+        });
+        row.appendChild(rBtn);
+      }
+      stalledWrap.appendChild(row);
+    });
+  }
+
+  /* ---- Delivered - awaiting you: the click IS the approval ---- */
+  var deliveredWrap = document.getElementById("bb-delivered");
+  if (!kanbanMode && data.delivered.length) {
+    document.getElementById("bb-delivered-section").hidden = false;
+    document.getElementById("bb-delivered-sub").textContent =
+      data.delivered.length + " awaiting your approval";
+    data.delivered.forEach(function (d) {
+      var row = el("div", "bb-row");
+      /* The Kasten: a visible checkbox whose click queues the approval order. */
+      var wrap = el("label", "bb-approve-wrap");
+      var box = document.createElement("input");
+      box.type = "checkbox"; box.className = "bb-approve"; box.value = d.ticket;
+      box.setAttribute("aria-label", "Approve and close " + d.ticket);
+      wrap.appendChild(box);
+      wrap.appendChild(el("span", "bb-approve-wrap__label", "Approve & close"));
+      row.appendChild(wrap);
+      var main = el("div", "bb-row__main");
+      main.appendChild(el("div", "bb-row__title", d.what));
+      var dbits = [];
+      if (d.result) dbits.push(d.result);
+      if (d.delivered_at) dbits.push("delivered " + d.delivered_at);
+      dbits.push(d.repo || d.ticket);
+      main.appendChild(el("div", "bb-row__sub", dbits.join(" · ")));
+      var dchips = el("div", "bb-chips");
+      dchips.appendChild(ticketChip(d.ticket));
+      dchips.appendChild(waitingChip(d.waiting_on || "captain"));
+      main.appendChild(dchips);
+      if (d.report_url) {
+        var dl = el("a", "bb-delivered__link", "report: " + d.report_url);
+        dl.href = d.report_url; dl.target = "_blank"; dl.rel = "noopener";
+        main.appendChild(dl);
+      }
+      if (d.pr_url) {
+        var dpr = el("a", "bb-delivered__link", "PR: " + d.pr_url);
+        dpr.href = d.pr_url; dpr.target = "_blank"; dpr.rel = "noopener";
+        main.appendChild(dpr);
+      }
+      row.appendChild(main);
+      box.addEventListener("change", function () {
+        if (!box.checked) return;
+        if (window.lavish && window.lavish.queuePrompt) {
+          window.lavish.queuePrompt(
+            "Approval - close this delivered work: " + d.ticket,
+            { tag: "choice", text: "Approve & close: " + d.ticket, element: box, queueKey: "approve." + d.ticket,
+              data: { schema: "fm-bearings-answer.v1", question: "approve." + d.ticket,
+                      selection: "approve", note: "" } }
+          );
+        }
+        row.classList.add("is-approved");
+        box.disabled = true;
+        markAccepted({ ticket: d.ticket, what: d.what, action: "approval" });
+      });
+      deliveredWrap.appendChild(row);
+    });
+  }
+
+  /* ---- My Take: the firstmate's own critical read ---- */
+  function adviceList(label, items) {
+    var box = el("div");
+    box.appendChild(el("div", "bb-advice__head", label));
+    var list = el("ul", "bb-advice__list");
+    if (!items || !items.length) list.appendChild(el("li", null, "—"));
+    else items.forEach(function (it) { list.appendChild(el("li", null, it)); });
+    box.appendChild(list);
+    return box;
+  }
+  var adviceWrap = document.getElementById("bb-advice");
+  if (data.advice.length) {
+    document.getElementById("bb-advice-section").hidden = false;
+    document.getElementById("bb-advice-sub").textContent =
+      data.advice.length + " note" + (data.advice.length === 1 ? "" : "s");
+    data.advice.forEach(function (a) {
+      var card = el("div", "fm-card bb-advice__card");
+      var top = el("div", "bb-advice__top");
+      top.appendChild(el("h3", "bb-advice__title", a.title));
+      var tags = el("span", "bb-advice__tags");
+      if (a.effort) tags.appendChild(badge("info", "effort " + a.effort));
+      if (a.risk) tags.appendChild(badge(a.risk === "low" ? "neutral" : "warn", "risk " + a.risk));
+      top.appendChild(tags);
+      card.appendChild(top);
+      card.appendChild(el("p", "bb-advice__verdict", a.verdict));
+      var grid = el("div", "bb-advice__grid");
+      grid.appendChild(adviceList("Pros", a.pros));
+      grid.appendChild(adviceList("Cons", a.cons));
+      card.appendChild(grid);
+      var rec = el("div", "bb-advice__rec");
+      rec.appendChild(el("b", null, "Recommendation: "));
+      rec.appendChild(el("span", null, a.recommendation || "—"));
+      card.appendChild(rec);
+      adviceWrap.appendChild(card);
+    });
+  }
+
+  /* ---- Kanban: the captain's own list, one column per state ---- */
+  var KANBAN_COLUMNS = [
+    { state: "captain", label: "Waiting for you" },
+    { state: "doing", label: "In progress" },
+    { state: "blocked", label: "Blocked" },
+    { state: "delivered", label: "Delivered - awaiting you" },
+    /* Resolved by the captain: the card leaves the working board and stays as
+       history, never silently finished by the fleet. */
+    { state: "closed", label: "Resolved by you", history: true }
+  ];
+  function ticketQuestions(card, t) {
+    (t.questions || []).forEach(function (q, qi) {
+      var key = "grill." + (qi + 1) + "." + t.id;
+      var form = document.createElement("form");
+      form.setAttribute("data-lavish-question", key);
+      form.appendChild(el("div", "bb-card__summary", q.prompt));
+      var opts = el("div", "bb-opts");
+      q.options.forEach(function (o, oi) {
+        var lab = el("label", "bb-opt");
+        var input = document.createElement("input");
+        input.type = "radio"; input.name = "answer"; input.value = o.value;
+        lab.appendChild(input);
+        var body = el("span", "bb-opt__body");
+        body.appendChild(el("span", "bb-opt__label", "(" + String.fromCharCode(97 + oi) + ") " + o.label));
+        if (o.hint) body.appendChild(el("span", "bb-opt__hint", o.hint));
+        lab.appendChild(body);
+        if (q.recommend_value && o.value === q.recommend_value) lab.appendChild(el("span", "bb-opt__rec", "rec"));
+        opts.appendChild(lab);
+      });
+      form.appendChild(opts);
+      if (q.allow_freeform) {
+        var ff = document.createElement("input");
+        ff.type = "text"; ff.name = "note"; ff.className = "bb-freeform";
+        ff.placeholder = "or answer in your own words…";
+        form.appendChild(ff);
+      }
+      var foot = el("div", "bb-decision__foot");
+      var btn = el("button", "fm-btn fm-btn--sm fm-btn--primary", "Answer");
+      btn.type = "submit";
+      foot.appendChild(btn);
+      var qd = el("span", "bb-queued");
+      qd.innerHTML = CHECK_SVG + " queued";
+      foot.appendChild(qd);
+      var qlimit = el("span", "bb-limit");
+      qlimit.setAttribute("role", "alert");
+      foot.appendChild(qlimit);
+      form.appendChild(foot);
+      form.addEventListener("submit", function (ev) {
+        ev.preventDefault();
+        var fd = new FormData(form);
+        var value = fd.get("answer");
+        var note = (fd.get("note") || "").trim();
+        if (!value && !note) return;
+        /* The answer channel drops a note past 512 bytes, so refuse it here and
+           say so instead of queueing something that would be lost. */
+        if (utf8ByteLength(note) > 512) {
+          qlimit.textContent = "Answer is too long to queue (512 bytes maximum).";
+          qlimit.classList.add("is-visible");
+          return;
+        }
+        if (window.lavish && window.lavish.queuePrompt) {
+          window.lavish.queuePrompt(
+            "Question (" + t.id + "): " + q.prompt,
+            { tag: "choice", text: "G" + (qi + 1) + " " + t.id + ": " + (value || note), element: form, queueKey: key,
+              data: { schema: "fm-bearings-answer.v1", question: key, selection: value || "", note: note } });
+        }
+        markAccepted({ ticket: t.id, what: t.title, action: "answer" });
+      });
+      card.appendChild(form);
+    });
+  }
+  function kanbanCard(t, compact) {
+    var card = el("div", "bb-card" + (compact ? " bb-card--history" : ""));
+    var top = el("div", "bb-card__top");
+    top.appendChild(ticketChip(t.id));
+    if (!compact) {
+      top.appendChild(waitingChip(t.state === "doing" ? "fleet" : t.state));
+    }
+    card.appendChild(top);
+    card.appendChild(el("div", "bb-card__title", t.title));
+    var meta = [];
+    if (t.owner) meta.push("who: " + t.owner);
+    if (t.opened_at) meta.push("opened " + t.opened_at);
+    if (t.updated_at) meta.push("updated " + t.updated_at);
+    if (t.delivered_at) meta.push("delivered " + t.delivered_at);
+    if (t.repo) meta.push(t.repo);
+    if (meta.length) card.appendChild(el("div", "bb-card__meta", meta.join(" · ")));
+    if (t.summary) card.appendChild(el("div", "bb-card__summary", t.summary));
+    if (t.result) card.appendChild(el("div", "bb-card__summary", t.result));
+    if (t.report_url) {
+      var rl = el("a", "bb-delivered__link", "report: " + t.report_url);
+      rl.href = t.report_url; rl.target = "_blank"; rl.rel = "noopener";
+      card.appendChild(rl);
+    }
+    if (t.pr_url) {
+      var pl = el("a", "bb-delivered__link", "PR: " + t.pr_url);
+      pl.href = t.pr_url; pl.target = "_blank"; pl.rel = "noopener";
+      card.appendChild(pl);
+    }
+    if (compact) {
+      /* A resolved card keeps its history so the outcome is never lost. */
+      if ((t.history || []).length) {
+        var ch2 = el("ul", "bb-card__list");
+        t.history.forEach(function (h) { ch2.appendChild(el("li", null, h)); });
+        card.appendChild(ch2);
+      }
+      return card;
+    }
+    if (t.state === "delivered") {
+      /* Delivering is not closing: the card stays until the captain clicks. */
+      var wrap = el("label", "bb-approve-wrap");
+      var box = document.createElement("input");
+      box.type = "checkbox"; box.className = "bb-approve"; box.value = t.id;
+      box.setAttribute("aria-label", "Approve and close " + t.id);
+      wrap.appendChild(box);
+      wrap.appendChild(el("span", "bb-approve-wrap__label", "Approve & close"));
+      card.appendChild(wrap);
+      box.addEventListener("change", function () {
+        if (!box.checked) return;
+        if (window.lavish && window.lavish.queuePrompt) {
+          window.lavish.queuePrompt(
+            "Approval - close this delivered work: " + t.id,
+            { tag: "choice", text: "Approve & close: " + t.id, element: box, queueKey: "approve." + t.id,
+              data: { schema: "fm-bearings-answer.v1", question: "approve." + t.id,
+                      selection: "approve", note: "" } });
+        }
+        card.classList.add("is-approved");
+        box.disabled = true;
+        markAccepted({ ticket: t.id, what: t.title, action: "approval" });
+      });
+    }
+    ticketQuestions(card, t);
+    if ((t.history || []).length) {
+      card.appendChild(el("div", "bb-card__head", "History"));
+      var hl = el("ul", "bb-card__list");
+      t.history.forEach(function (h) { hl.appendChild(el("li", null, h)); });
+      card.appendChild(hl);
+    }
+    if ((t.learnings || []).length) {
+      card.appendChild(el("div", "bb-card__head", "Learnings"));
+      var ll = el("ul", "bb-card__list bb-card__learnings");
+      t.learnings.forEach(function (l) { ll.appendChild(el("li", null, l)); });
+      card.appendChild(ll);
+    }
+    return card;
+  }
+  var kanbanWrap = document.getElementById("bb-kanban");
+  if (kanbanMode) {
+    document.getElementById("bb-kanban-section").hidden = false;
+    document.getElementById("bb-kanban-sub").textContent =
+      data.tickets.length + " ticket" + (data.tickets.length === 1 ? "" : "s");
+    KANBAN_COLUMNS.forEach(function (col) {
+      var box = el("div", "bb-col" + (col.history ? " bb-col--history" : ""));
+      var cards = data.tickets.filter(function (t) { return t.state === col.state; });
+      var head = el("div", "bb-col__head");
+      head.appendChild(el("span", null, col.label));
+      head.appendChild(el("span", "bb-col__count", String(cards.length)));
+      box.appendChild(head);
+      if (!cards.length) box.appendChild(el("div", "bb-col__empty", "-"));
+      else cards.forEach(function (t) { box.appendChild(kanbanCard(t, !!col.history)); });
+      kanbanWrap.appendChild(box);
+    });
+  }
+
+  /* A real in-progress or finished row supersedes the placeholder: work the
+     kanban already shows as running or resolved, plus anything Underway or
+     Landed carries. A still-waiting or blocked card does NOT supersede it, so
+     the captain keeps seeing the action they just ordered. */
+  var realRowLists = [data.underway, data.landed,
+    (data.tickets || []).filter(function (t) { return t && (t.state === "doing" || t.state === "closed"); })];
+  realRowLists.forEach(function (list) {
+    (list || []).forEach(function (x) {
+      var t = x && (x.ticket || x.key || x.id);
+      if (t) renderedTickets[String(t)] = true;
+    });
+  });
+  renderProvisional();
+  }
+
+  /* ---- live update + sound -------------------------------------------------
+     The board file is rebuilt in place by firstmate, so this page watches it and
+     re-renders itself when it changes. The news must show without a reload, and
+     it must survive an F5 - so what counts as "already seen" is stored per board
+     path, never only in memory. Sound starts off until the captain turns it on
+     with the visible toggle, because browsers refuse audio before a gesture. */
+  var LIVE_POLL_MS = 20000;
+  var SOUND_PREF_KEY = "fm-bearings-sound";
+  var liveSeenKey = "fm-bearings-seen:" + (data.home || "") + ":" +
+    ((window.location && window.location.pathname) || "board");
+  var liveCurrent = data;
+  var liveSound = false;
+  var liveAudio = null;
+  var liveState = { available: false, chimes: 0, notice: "" };
+  var banner, bannerTitle, bannerList, bannerHint, soundButton;
+
+  function hashText(text) {
+    var h = 2166136261, i;
+    for (i = 0; i < text.length; i++) { h ^= text.charCodeAt(i); h = (h * 16777619) >>> 0; }
+    return h.toString(16) + ":" + text.length;
+  }
+  var memoryStore = {};
+  function storeRead(key) {
+    try { if (window.localStorage) return window.localStorage.getItem(key); } catch (e) {}
+    return Object.prototype.hasOwnProperty.call(memoryStore, key) ? memoryStore[key] : null;
+  }
+  function storeWrite(key, value) {
+    try { if (window.localStorage) { window.localStorage.setItem(key, value); return; } } catch (e) {}
+    memoryStore[key] = value;
+  }
+
+  /* A choice the captain just made must be visible as work at once, even before
+     firstmate has dispatched it. The board records the accepted action locally
+     and renders it in Underway as "accepted - dispatching" with the time, then
+     drops it as soon as the real row with that ticket appears. Persisting it
+     per board path means an F5 does not make a fresh decision invisible. */
+  function acceptedKeyValue() {
+    return "fm-bearings-accepted:" + (data.home || "") + ":" +
+      ((window.location && window.location.pathname) || "board");
+  }
+  function acceptedStore() {
+    var raw = storeRead(acceptedKeyValue());
+    if (!raw) return [];
+    try { var list = JSON.parse(raw); return Array.isArray(list) ? list : []; } catch (e) { return []; }
+  }
+  function clearProvisional() {
+    var wrap = document.getElementById("bb-underway");
+    if (!wrap || typeof wrap.removeChild !== "function") return;
+    var i = 0;
+    while (i < (wrap.children || []).length) {
+      var c = wrap.children[i];
+      if (c && (c.className || "").split(/\s+/).indexOf("bb-provisional") >= 0) wrap.removeChild(c);
+      else i++;
+    }
+  }
+  function renderProvisional() {
+    clearProvisional();
+    var wrap = document.getElementById("bb-underway");
+    if (!wrap) return;
+    var now = Date.now();
+    acceptedStore().forEach(function (e) {
+      if (!e || !e.ticket || renderedTickets[String(e.ticket)]) return;
+      if (e.ms && (now - e.ms) > 12 * 3600 * 1000) return;
+      var row = el("div", "bb-row bb-provisional");
+      row.appendChild(badge("warn", "accepted"));
+      var main = el("div", "bb-row__main");
+      main.appendChild(el("div", "bb-row__title", e.what || e.ticket));
+      main.appendChild(el("div", "bb-row__sub",
+        (e.action || "answer") + " accepted from the board · firstmate is dispatching · since " + (e.at || "now")));
+      var chips = el("div", "bb-chips");
+      chips.appendChild(ticketChip(e.ticket));
+      /* The ordered work is the fleet's turn, not a running worker yet. */
+      chips.appendChild(el("span", "bb-wait bb-wait--fleet", "dispatching"));
+      main.appendChild(chips);
+      row.appendChild(main);
+      wrap.appendChild(row);
+    });
+  }
+  function markAccepted(entry) {
+    if (!entry || !entry.ticket) return;
+    var list = acceptedStore().filter(function (x) { return x && x.ticket !== entry.ticket; });
+    entry.at = new Date().toISOString().replace("T", " ");
+    entry.ms = Date.now();
+    list.push(entry);
+    storeWrite(acceptedKeyValue(), JSON.stringify(list));
+    renderProvisional();
+  }
+  function newIds(prevList, nextList, keyOf) {
+    var seen = {};
+    (prevList || []).forEach(function (x) { seen[String(keyOf(x))] = 1; });
+    return (nextList || []).filter(function (x) { return !seen[String(keyOf(x))]; }).length;
+  }
+  /* What is new between two payloads, counted by durable identity. */
+  function summaryOf(prev, next) {
+    prev = prev || {}; next = next || {};
+    var out = [];
+    function add(label, before, after, keyOf) {
+      var n = newIds(before, after, keyOf);
+      if (n) out.push(label + ": " + n);
+    }
+    add("new question", prev.grill, next.grill, function (x) { return x.ticket + "|" + x.prompt; });
+    add("new decision", prev.captains_call, next.captains_call, function (x) { return x.key; });
+    add("delivered, awaiting you", prev.delivered, next.delivered, function (x) { return x.ticket; });
+    add("stopped worker", prev.stalled, next.stalled, function (x) { return x.id; });
+    add("completed", prev.landed, next.landed, function (x) { return x.id; });
+    add("now underway", prev.underway, next.underway, function (x) { return x.id; });
+    add("new charted work", prev.charted, next.charted, function (x) { return x.id; });
+    add("new note", prev.advice, next.advice, function (x) { return x.id; });
+    /* The kanban is the captain's ticket list, so a new or moved card is news
+       too, even when the standalone arrays are empty in kanban mode. */
+    var beforeState = {};
+    (prev.tickets || []).forEach(function (t) { if (t && t.id) beforeState[t.id] = t.state; });
+    (next.tickets || []).forEach(function (t) {
+      if (!t || !t.id) return;
+      if (!Object.prototype.hasOwnProperty.call(beforeState, t.id)) out.push("new ticket " + t.id);
+      else if (beforeState[t.id] !== t.state) out.push(t.id + " is now " + t.state);
+    });
+    return out;
+  }
+  function setSound(on) {
+    liveSound = !!on;
+    if (soundButton) {
+      soundButton.textContent = (liveSound ? "\uD83D\uDD14" : "\uD83D\uDD15") + " Sound: " + (liveSound ? "on" : "off");
+      soundButton.setAttribute("aria-pressed", liveSound ? "true" : "false");
+    }
+    storeWrite(SOUND_PREF_KEY, liveSound ? "1" : "0");
+  }
+  function markSoundBlocked() {
+    if (!soundButton) return;
+    soundButton.textContent = "\uD83D\uDD07 Sound: blocked";
+    soundButton.setAttribute("title",
+      "This browser blocks audio until the tab is clicked. The on-screen notice still shows every change.");
+  }
+  /* A short two-tone chime through Web Audio, created lazily on the first user
+     gesture. No external library, no audio file. */
+  function playChime() {
+    if (!liveSound) return;
+    var Ctx = window.AudioContext || window.webkitAudioContext;
+    if (typeof Ctx !== "function") { markSoundBlocked(); return; }
+    try {
+      if (!liveAudio) liveAudio = new Ctx();
+      if (liveAudio.state === "suspended" && typeof liveAudio.resume === "function") liveAudio.resume();
+      var base = liveAudio.currentTime;
+      [0, 1].forEach(function (i) {
+        var osc = liveAudio.createOscillator();
+        var gain = liveAudio.createGain();
+        osc.type = "sine";
+        osc.frequency.value = i ? 1320 : 880;
+        gain.gain.setValueAtTime(0.0001, base + i * 0.18);
+        gain.gain.exponentialRampToValueAtTime(0.18, base + i * 0.18 + 0.02);
+        gain.gain.exponentialRampToValueAtTime(0.0001, base + i * 0.18 + 0.16);
+        osc.connect(gain);
+        gain.connect(liveAudio.destination);
+        osc.start(base + i * 0.18);
+        osc.stop(base + i * 0.18 + 0.18);
+      });
+      liveState.chimes += 1;
+    } catch (e) { markSoundBlocked(); }
+  }
+  function announce(changes, reason) {
+    liveState.notice = reason + " | " + changes.join(" | ");
+    if (!banner) return;
+    bannerTitle.textContent = reason;
+    clear(bannerList);
+    changes.forEach(function (c) { bannerList.appendChild(el("li", null, c)); });
+    bannerHint.textContent = liveState.available
+      ? "This board watches itself; nothing to reload."
+      : "Reload the page to see the change.";
+    banner.hidden = false;
+    playChime();
+  }
+  function payloadFromHtml(html) {
+    var marker = html.indexOf('id="bearings-data"');
+    if (marker < 0) return null;
+    var open = html.indexOf(">", marker);
+    var close = html.indexOf("</script>", open);
+    if (open < 0 || close < 0) return null;
+    try { return JSON.parse(html.substring(open + 1, close)); } catch (e) { return null; }
+  }
+  function applyPayload(next) {
+    var changes = summaryOf(liveCurrent, next);
+    liveCurrent = next;
+    try { renderBoard(next); } catch (e) {}
+    storeWrite(liveSeenKey, JSON.stringify(next));
+    if (changes.length) announce(changes, "Board updated");
+    return changes.length > 0;
+  }
+  function refreshNow() {
+    var loc = window.location;
+    if (!liveState.available || typeof window.fetch !== "function" || !loc) return Promise.resolve(false);
+    return window.fetch(loc.href, { cache: "no-store" }).then(function (res) {
+      return res && res.ok ? res.text() : null;
+    }).then(function (html) {
+      if (typeof html !== "string") return false;
+      var next = payloadFromHtml(html);
+      if (!next || next.schema !== "fm-bearings-board.v1") return false;
+      if (hashText(JSON.stringify(next)) === hashText(JSON.stringify(liveCurrent))) return false;
+      return applyPayload(next);
+    }).catch(function () { return false; });
+  }
+  function setupLiveArea() {
+    banner = document.getElementById("bb-live");
+    bannerTitle = document.getElementById("bb-live-title");
+    bannerList = document.getElementById("bb-live-list");
+    bannerHint = document.getElementById("bb-live-hint");
+    soundButton = document.getElementById("bb-sound");
+    var dismiss = document.getElementById("bb-live-dismiss");
+    if (banner) banner.hidden = true;
+    var loc = window.location;
+    liveState.available = !!(loc && typeof window.fetch === "function" && typeof window.setInterval === "function");
+    setSound(storeRead(SOUND_PREF_KEY) === "1");
+    if (soundButton && typeof soundButton.addEventListener === "function") {
+      soundButton.addEventListener("click", function () {
+        var turningOn = !liveSound;
+        setSound(turningOn);
+        if (turningOn) playChime();
+      });
+    }
+    if (dismiss && typeof dismiss.addEventListener === "function") {
+      dismiss.addEventListener("click", function () { if (banner) banner.hidden = true; liveState.notice = ""; });
+    }
+    /* A change that happened while the page was closed still shows: the seen
+       payload is stored per board path, so an F5 does not lose the notice. */
+    var raw = storeRead(liveSeenKey);
+    if (raw) {
+      try {
+        var previous = JSON.parse(raw);
+        if (hashText(JSON.stringify(previous)) !== hashText(JSON.stringify(liveCurrent))) {
+          var missed = summaryOf(previous, liveCurrent);
+          announce(missed.length ? missed : ["the board changed while you were away"], "Changed while you were away");
+        }
+      } catch (e) {}
+    }
+    storeWrite(liveSeenKey, JSON.stringify(liveCurrent));
+    if (liveState.available) window.setInterval(function () { refreshNow(); }, LIVE_POLL_MS);
+  }
+
+  window.fmBearingsBoard = window.fmBearingsBoard || {};
+  window.fmBearingsBoard.liveState = liveState;
+  window.fmBearingsBoard.refreshNow = refreshNow;
+  window.fmBearingsBoard.setSound = setSound;
+  window.fmBearingsBoard.playChime = playChime;
+  window.fmBearingsBoard.markAccepted = markAccepted;
+
+  try {
+    renderBoard(data);
   } catch (e) {
     renderBoardError("The board data could not be rendered");
   }
+  setupLiveArea();
 })();
 </script>
 </body>
